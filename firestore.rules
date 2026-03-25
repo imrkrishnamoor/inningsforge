@@ -1,0 +1,295 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return isSignedIn() && request.auth.token.role is string ? request.auth.token.role : '';
+    }
+
+    function isActiveVerifiedSession() {
+      return isSignedIn() && request.auth.token.verification_status == 'active';
+    }
+
+    function isAdmin() {
+      return isActiveVerifiedSession() && role() == 'admin';
+    }
+
+    function isCoach() {
+      return isActiveVerifiedSession() && role() == 'coach';
+    }
+
+    function isCoachAssignedToPlayerData(playerData) {
+      return isCoach()
+        && playerData.assignedCoachIds is list
+        && request.auth.uid in playerData.assignedCoachIds;
+    }
+
+    function isCoachAssignedToPlayerId(playerId) {
+      return isCoach()
+        && exists(/databases/$(database)/documents/players/$(playerId))
+        && get(/databases/$(database)/documents/players/$(playerId)).data.assignedCoachIds is list
+        && request.auth.uid in get(/databases/$(database)/documents/players/$(playerId)).data.assignedCoachIds;
+    }
+
+    function isPlayer() {
+      return isActiveVerifiedSession() && (role() == 'player' || role() == 'student');
+    }
+
+    function isParentOrGuardian() {
+      return isActiveVerifiedSession() && (role() == 'parent' || role() == 'guardian');
+    }
+
+    function sessionEmail() {
+      return isSignedIn() && request.auth.token.email is string ? request.auth.token.email : '';
+    }
+
+    // V1 rule scaffold: account identity follows auth uid == account doc id.
+    // Keep this strict until Firebase Auth/session mapping is finalized.
+    function isOwnAccount(accountId) {
+      return isSignedIn() && request.auth.uid == accountId;
+    }
+
+    function hasRequiredAccountCreateFields() {
+      return request.resource.data.keys().hasAll([
+        'account_id',
+        'role',
+        'name',
+        'email',
+        'email_verified',
+        'verification_status',
+        'created_at',
+        'verification_deadline_at'
+      ]);
+    }
+
+    function accountCreateIsPendingVerification() {
+      return request.resource.data.email_verified == false
+        && request.resource.data.verification_status == 'pending_verification';
+    }
+
+    function isAccountVerificationUpdateAllowed() {
+      return request.resource.data.account_id == resource.data.account_id
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.created_at == resource.data.created_at
+        && request.resource.data.verification_deadline_at == resource.data.verification_deadline_at
+        && request.resource.data.email_verified == true
+        && request.resource.data.verification_status == 'active';
+    }
+
+    match /accounts/{accountId} {
+      allow create: if isOwnAccount(accountId)
+        && request.resource.data.account_id == accountId
+        && hasRequiredAccountCreateFields()
+        && accountCreateIsPendingVerification();
+
+      allow read: if isOwnAccount(accountId);
+
+      // Only allow account state transition pending -> active from client.
+      allow update: if isOwnAccount(accountId)
+        && resource.data.verification_status == 'pending_verification'
+        && isAccountVerificationUpdateAllowed();
+
+      allow delete: if false;
+    }
+
+    // Verification tokens are backend-managed only.
+    match /account_verification_tokens/{tokenId} {
+      allow read, write: if false;
+    }
+
+    function hasRequiredPlayerFields(data) {
+      return data.keys().hasAll([
+        'name',
+        'age',
+        'role',
+        'guardianEmail',
+        'guardianAccessToken',
+        'playerUserId'
+      ]);
+    }
+
+    function isOwnPlayerResource() {
+      return isPlayer() && resource.data.playerUserId == request.auth.uid;
+    }
+
+    function isOwnPlayerRequest() {
+      return isPlayer() && request.resource.data.playerUserId == request.auth.uid;
+    }
+
+    function isGuardianOfPlayerResource() {
+      return isParentOrGuardian()
+        && sessionEmail() != ''
+        && resource.data.guardianEmail == sessionEmail();
+    }
+
+    function isGuardianOfPlayerRequest() {
+      return isParentOrGuardian()
+        && sessionEmail() != ''
+        && request.resource.data.guardianEmail == sessionEmail();
+    }
+
+    function canReadPlayerById(playerId) {
+      return isAdmin()
+        || isCoachAssignedToPlayerId(playerId)
+        || (
+          exists(/databases/$(database)/documents/players/$(playerId))
+          && isPlayer()
+          && get(/databases/$(database)/documents/players/$(playerId)).data.playerUserId == request.auth.uid
+        )
+        || (
+          exists(/databases/$(database)/documents/players/$(playerId))
+          && isParentOrGuardian()
+          && sessionEmail() != ''
+          && get(/databases/$(database)/documents/players/$(playerId)).data.guardianEmail == sessionEmail()
+        );
+    }
+
+    match /players/{playerId} {
+      allow read: if isAdmin() || isCoachAssignedToPlayerData(resource.data) || isOwnPlayerResource() || isGuardianOfPlayerResource();
+
+      allow create: if hasRequiredPlayerFields(request.resource.data)
+        && (isAdmin() || isOwnPlayerRequest() || isCoachAssignedToPlayerData(request.resource.data));
+
+      allow update: if hasRequiredPlayerFields(request.resource.data)
+        && (isAdmin() || isOwnPlayerRequest() || isGuardianOfPlayerRequest() || isCoachAssignedToPlayerData(request.resource.data));
+
+      allow delete: if isAdmin();
+    }
+
+    function hasRequiredAttendanceFields(data) {
+      return data.keys().hasAll(['player_id', 'day_number', 'status']);
+    }
+
+    function isValidAttendanceStatus(status) {
+      return status == 'P' || status == 'A';
+    }
+
+    function isValidAttendanceDay(dayNumber) {
+      return dayNumber is int && dayNumber >= 1 && dayNumber <= 16;
+    }
+
+    function isValidAttendancePayload(data, attendanceId) {
+      return hasRequiredAttendanceFields(data)
+        && isValidAttendanceStatus(data.status)
+        && isValidAttendanceDay(data.day_number)
+        && attendanceId == (data.player_id + '_' + data.day_number);
+    }
+
+    function isNumber(value) {
+      return value is int || value is float;
+    }
+
+    match /attendance/{attendanceId} {
+      allow read: if canReadPlayerById(resource.data.player_id);
+
+      allow create, update: if (isAdmin() || isCoachAssignedToPlayerId(request.resource.data.player_id))
+        && isValidAttendancePayload(request.resource.data, attendanceId);
+
+      allow delete: if isAdmin() || isCoachAssignedToPlayerId(resource.data.player_id);
+    }
+
+    function hasRequiredMetricFields(data) {
+      return data.keys().hasAll([
+        'player_id',
+        'metric_key',
+        'baseline_value',
+        'final_value',
+        'improvement',
+        'improvement_percent'
+      ]);
+    }
+
+    function hasValidMetricShape(data, metricId) {
+      return hasRequiredMetricFields(data)
+        && data.metric_key is string
+        && data.metric_key.size() > 0
+        && metricId == (data.player_id + '_' + data.metric_key)
+        && isNumber(data.baseline_value)
+        && data.baseline_value > 0
+        && (data.final_value == null || isNumber(data.final_value))
+        && (data.final_value != null || (data.improvement == null && data.improvement_percent == null))
+        && (data.final_value == null || (isNumber(data.improvement) && isNumber(data.improvement_percent)));
+    }
+
+    match /metrics/{metricId} {
+      allow read: if canReadPlayerById(resource.data.player_id);
+
+      allow create, update: if (isAdmin() || isCoachAssignedToPlayerId(request.resource.data.player_id))
+        && hasValidMetricShape(request.resource.data, metricId);
+
+      allow delete: if isAdmin() || isCoachAssignedToPlayerId(resource.data.player_id);
+    }
+
+    function hasRequiredSessionFields(data) {
+      return data.keys().hasAll([
+        'event_id',
+        'player_id',
+        'day_number',
+        'assessments',
+        'notes'
+      ]);
+    }
+
+    function hasValidSessionShape(data, sessionId) {
+      return hasRequiredSessionFields(data)
+        && data.event_id is string
+        && data.event_id.size() > 0
+        && data.player_id is string
+        && data.player_id.size() > 0
+        && isValidAttendanceDay(data.day_number)
+        && data.assessments is map
+        && data.notes is string
+        && sessionId == (data.event_id + '_' + data.player_id + '_' + data.day_number);
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if canReadPlayerById(resource.data.player_id);
+
+      allow create, update: if (isAdmin() || isCoachAssignedToPlayerId(request.resource.data.player_id))
+        && hasValidSessionShape(request.resource.data, sessionId);
+
+      allow delete: if isAdmin() || isCoachAssignedToPlayerId(resource.data.player_id);
+    }
+
+    function hasRequiredReportFields(data) {
+      return data.keys().hasAll([
+        'player_id',
+        'player_name',
+        'player_role',
+        'attendance_percent',
+        'metric_summaries',
+        'feedback',
+        'generated_at'
+      ]);
+    }
+
+    function hasValidReportShape(data, reportId) {
+      return hasRequiredReportFields(data)
+        && reportId == data.player_id
+        && data.player_name is string
+        && data.player_role is string
+        && data.feedback is string
+        && data.metric_summaries is list
+        && data.attendance_percent is int
+        && data.attendance_percent >= 0
+        && data.attendance_percent <= 100;
+    }
+
+    match /reports/{reportId} {
+      allow read: if canReadPlayerById(resource.data.player_id);
+
+      allow create, update: if (isAdmin() || isCoachAssignedToPlayerId(request.resource.data.player_id))
+        && hasValidReportShape(request.resource.data, reportId);
+
+      allow delete: if isAdmin() || isCoachAssignedToPlayerId(resource.data.player_id);
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,484 @@
+*Coach Persistence Guard Added*
+
+• Prevented coach sessions from attempting direct player writes blocked by Firestore rules
+• Player persistence now runs only for admins or the logged-in student profile
+• Reduces "missing or insufficient permissions" noise in coach consoles
+
+📊 Test results 9/9 passed
+
+*Coach Assessment Cloud-Only Save Added*
+
+• Coach assessment saves now use Cloud Functions only (no direct Firestore writes)
+• Prevents permission errors when coach is not assigned in Firestore rules
+• Keeps assessment saves aligned with existing cloud fallback path
+
+📊 Test results 9/9 passed
+
+*Weekly Goals Persistence Added*
+
+• Weekly goals and progress now persist to player profiles in Firestore
+• Student dashboard loads weekly goals from persisted player data
+• Coach weekly goal saves now update player documents for visibility
+
+📊 Test results 9/9 passed
+
+*Weekly Goals Cloud Save + Profile Payload Added*
+
+• Coach weekly goals now save through Cloud Functions to avoid Firestore permission blocks
+• Player profile responses now include weekly goals and progress
+• Student dashboard can hydrate goals even when profile comes from cloud
+
+📊 Test results 9/9 passed
+
+*Weekly Goal History Added*
+
+• Weekly goal saves now append week-start snapshots with status history
+• Student Weekly Goals shows a history timeline with status badges
+• History is capped to the most recent 8 weeks
+
+📊 Test results 9/9 passed
+
+*Admin Save/Discard Controls (Phase 1) Added*
+
+• Agenda Builder now uses explicit Save/Discard with unsaved-change indicator
+• Event modal now warns on close when changes are unsaved and uses Save/Discard buttons
+• Application Settings toggles now stage drafts and save only on explicit Save
+• Navigation and browser refresh warn when admin drafts are pending
+
+📊 Test results 9/9 passed
+
+*Coach + Student Save/Discard Controls (Phase 2) Added*
+
+• Coach assessment modal now edits drafts with explicit Save/Discard controls
+• Coach attendance checkbox changes stage in draft and persist on Save
+• Weekly goals now include Save/Discard with unsaved-change indicator
+• Student enrollment now queues enroll/deregister changes with Save/Discard
+• Navigation and browser refresh warn when coach/student drafts are pending
+
+📊 Test results 9/9 passed
+
+*Agenda Template Library Added*
+
+• Agenda Builder now manages reusable agenda templates (not event-bound)
+• Create blank or 16-day templates, edit day-wise, and delete templates
+• Event modal lets you choose a template or create an event from a template
+• Added day add/remove controls for variable-length agendas
+
+📊 Test results 9/9 passed
+
+*Coach Assessment Cloud Fallback Added*
+
+• Added Cloud Function to update session assessments for coaches
+• Coach assessment saves now fall back to cloud on Firestore permission errors
+• Prevents lost session notes when rules block direct writes
+
+📊 Test results 9/9 passed
+
+*Auto Refresh For Coach + Student Data Added*
+
+• Added periodic refresh of Firestore bootstrap data every 30s for logged-in users
+• Refresh also triggers when the tab becomes visible again
+• Reduces stale rosters and enrollment views without manual reload
+
+📊 Test results 9/9 passed
+
+*Student Enrollment Cloud Fallback Added*
+
+• Added Cloud Functions to read player profile and update enrollment
+• Student dashboards now load profile when Firestore read is blocked
+• Enrollment persistence now falls back to cloud on permission errors
+• Student sessions now prefer cloud profile and always sync enrollment
+
+📊 Test results 9/9 passed
+
+*Coach Roster Cloud Fallback Added*
+
+• Added Cloud Function to list coach roster when Firestore read is blocked
+• Coach dashboard now falls back to cloud roster on permission errors
+• Prevents empty roster when Firestore rules deny coach queries
+• Diagnostics panel now uses same fallback for permission errors
+• Coach sessions now prefer cloud roster when available
+
+📊 Test results 9/9 passed
+
+*Coach Query Diagnostics Added*
+
+• Added coach diagnostics panel to preview players returned by coach query
+• Shows player IDs, eventIds, and assignedCoachIds for first results
+• Helps pinpoint why coach roster stays empty
+
+📊 Test results 9/9 passed
+
+*Coach Manual Data Reload Added*
+
+• Added a coach-only button to re-run Firestore bootstrap data
+• Helps roster refresh after student enrollments without full logout
+• Useful for quick validation during multi-session testing
+
+📊 Test results 9/9 passed
+
+*Coach Session Health Panel Added*
+
+• Added coach-facing session health panel with uid/claims/persistence details
+• Exposes mismatched auth sessions that block roster hydration
+• Helps diagnose empty enrollments for assigned coaches
+
+📊 Test results 9/9 passed
+
+*Coach Roster ID Normalization Added*
+
+• Coach roster queries now normalize coach IDs to uppercase
+• Player assignedCoachIds persist in normalized form to avoid case mismatches
+• Prevents empty roster when coach ID casing differs
+
+📊 Test results 9/9 passed
+
+*Admin Diagnostics Player Profile Details Added*
+
+• Account Diagnostics now shows linked player profile fields
+• Displays eventIds and assignedCoachIds to validate enrollment visibility
+• Surfaces guardian email to confirm player linkage
+
+📊 Test results 9/9 passed
+
+*Admin Account Diagnostics Panel Added*
+
+• Added admin-only lookup tool to verify account ID/email presence and status
+• Diagnostics surface role, verification, and email status to pinpoint 401 login issues
+• Reduces guesswork when coach logins fail by confirming backend account data
+
+📊 Test results 9/9 passed
+
+*Admin Account Migration Tool Added*
+
+• Added admin-only migration endpoint to backfill verified pending signups into accounts
+• Ensures auth users and custom claims exist for all active accounts
+• Seeds default admin account if missing to unblock privileged access
+
+📊 Test results 9/9 passed
+
+*Account Role Normalization Added*
+
+• Backfills top-level role from profile.role when missing
+• Login flow now normalizes role before issuing custom claims
+• Migration job normalizes existing accounts for consistent admin access
+
+📊 Test results 9/9 passed
+
+*Admin Session Debug Panel Added*
+
+• Added admin-only panel to inspect auth uid and token claims
+• Refresh button forces claim reload for troubleshooting admin 403 errors
+
+📊 Test results 9/9 passed
+
+*Student Enrollment Visibility Repair (IF_S_00001) Completed*
+
+• Added robust student profile linking fallback using account ID and deterministic player ID mapping
+• Added safe guard to reuse and repair legacy player records instead of creating duplicate empty profiles
+• Broadened student role checks to support both player and student role labels in enrollment/dashboard flows
+• Existing enrolled camp eventIds now resolve correctly for legacy student accounts after login
+
+📊 Test results 9/9 passed
+
+*Daily Quiz Bank + Client-Only Mini-Games Update Completed*
+
+• Replaced static quiz with a generated bank of 150 cricket questions (30 topics × 5 prompt variants)
+• Added deterministic daily quiz selection to show 5 unique questions per day
+• Updated quiz UI to display daily set context and question progress (Question X of 5)
+• Removed mini-game backend persistence calls for Quiz, LBW, and Memory interactions
+• Mini-game progress now remains client-side session state only (no Firestore writes)
+
+📊 Test results 9/9 passed
+
+*Student Enrollment Refresh Persistence Fix Completed*
+
+• Fixed Firestore hydration timing so cloud player data reloads after authenticated login
+• Student event enrollments saved in player eventIds now restore correctly after browser refresh
+• Prevented startup-only hydration from missing post-login enrollment state
+
+📊 Test results 9/9 passed
+
+*Guardian Link Copy Added*
+
+• Coach modal now exposes a Copy Guardian Link action
+• Link uses the player guardian access token with ?guardian= query param
+• Copy warns if guardian access is disabled or token missing
+
+📊 Test results 9/9 passed
+
+*Coach Roster Guardian Link Action Added*
+
+• Added a copy-link icon under each coach roster Actions row
+• Uses existing guardian token to generate ?guardian= access link
+• Keeps coach modal link button for quick sharing
+
+📊 Test results 9/9 passed
+
+*Event Agenda Template Sync Added*
+
+• Events now persist the selected agenda template ID
+• Agenda templates re-apply to events after template updates
+• Event edit modal now restores the selected template
+
+📊 Test results 9/9 passed
+
+*Student Event-Driven Dashboard Grouping Completed*
+
+• Added event filter flow for student event-driven modules so users can select one enrolled event context
+• My Attendance now renders in selected-event context with day-wise event cycle view
+• Skill Progress now summarizes event-scoped assessment averages and chart for selected event
+• Coach Notes now lists notes by day for the selected event only
+• Weekly Goals now appears in selected-event context with progress status and notes for easier UX grouping
+• Added reusable Event Filter selector UI across event-driven student tiles for consistent navigation
+
+📊 Test results 9/9 passed
+
+*Landing Events Help Dialog Update Completed*
+
+• Removed Enroll action buttons from Landing page Upcoming Events (list and calendar views)
+• Added Help icon in Upcoming Events header to guide users through enrollment process
+• Help dialog now explains full flow: student signup, email verification, login, All Events enrollment, and paid-event payment requirement
+• Landing page now acts as event discovery + guidance only; enrollment actions are inside Student Dashboard
+
+📊 Test results 9/9 passed
+
+*Student Events Navigation + Deregistration Policy Update Completed*
+
+• Added separate student LHS tile: *All Events* for discover-and-enroll flow
+• Updated *My Events* to show only events the student is enrolled in
+• Available events list now excludes already enrolled events automatically
+• Added student deregistration flow with confirmation modal
+• Deregistration allowed only for free events and only before event start date
+• Paid event enrollments now show no-refund restriction and cannot be deregistered from student dashboard
+
+📊 Test results 9/9 passed
+
+*Student Profile Auto-Link Provisioning Completed*
+
+• Fixed student login linkage gap where account login succeeded but student profile mapping was missing
+• Backend now auto-provisions/repairs player profile records for student roles during account verify and login flows
+• Frontend now auto-creates a local fallback student profile on successful player login when linkage is missing
+• Enroll CTA no longer remains blocked due to missing profile linkage for valid student accounts
+• Existing student accounts without player records are repaired automatically on next login
+
+📊 Test results 9/9 passed
+
+*Student Event Enrollment + Mini-Game Progress Sync Completed*
+
+• Fixed landing enroll-to-login linkage so student login now continues to enrollment confirmation for the selected event
+• Added mandatory Yes/Cancel confirmation with event name after student login from landing enrollment flow
+• If student cancels enrollment from this flow, user is logged out and returned to landing page
+• If student confirms, student is mapped to the event and event appears under My Events immediately
+• Added duplicate enrollment protection with clear toast message when already enrolled
+• Student dashboard My Events now includes an Available Events list with Enroll actions and My Events summary panel
+• Mini-game performance progress (Quiz, LBW Lab, Memory Match) now persists to Firebase via sessions collection as student learning snapshots
+• Event enrollment map now hydrates from Firestore player eventIds when cloud data is loaded
+
+📊 Test results 9/9 passed
+
+*Firebase Application Settings + Maintenance Gate Completed*
+
+• Application Settings now load from Firebase and persist via Cloud Functions (listPublicAppSettings, listAppSettings, upsertAppSettings)
+• Admin dashboard toggles now save settings to backend with confirmation modal and toast feedback
+• Maintenance Mode landing is now simplified to a strict maintenance screen with only an Admin Login action
+• During maintenance mode, non-admin login is blocked and only admin login is allowed
+
+📊 Test results 9/9 passed
+
+*Custom Confirm Modal + Toast Messaging Completed*
+
+• Removed browser-native confirm/alert usage from admin action flows
+• Added in-app Yes/Cancel confirmation modal for sensitive actions
+• Added toast messaging for warnings, cancellations, success, and error outcomes
+• Wired user status/role actions and event visibility/registration/delete actions to modal + toast flow
+
+📊 Test results 9/9 passed
+
+*Admin Action Confirmation Dialogs Completed*
+
+• Added confirmation dialogs before sensitive actions in User Management and Event Management
+• Inactivate/activate user status now requires explicit confirmation
+• Role promotion actions (to coach/admin) now require explicit confirmation
+• Event visibility toggle, registration-status toggle, and delete event now require explicit confirmation
+
+📊 Test results 9/9 passed
+
+*Event ID Rename Duplicate Fix Completed*
+
+• Editing an event and changing its Event ID now performs a safe rename flow
+• Old Event ID record is deleted after successful save of the new Event ID
+• Event agenda mapping now follows the renamed Event ID to avoid orphaned or duplicate agenda keys
+
+📊 Test results 9/9 passed
+
+*Landing CTA Label Correction Completed*
+
+• Landing event CTA now shows *Coming Soon* when registration status is coming_soon
+• *Unavailable* is now reserved for enrollment-blocked states only
+• Applied consistently in both List view CTA pill and Calendar view action tooltip
+
+📊 Test results 9/9 passed
+
+*Landing Refresh Event Source Fix Completed*
+
+• Landing page now hydrates events from backend on app startup (no demo fallback display after refresh when cloud endpoint is available)
+• Added public Cloud Function endpoint `listPublicEvents` for unauthenticated landing view
+• Public endpoint returns only visible events and keeps event ordering stable
+• Verified endpoint returns persisted event data successfully
+
+📊 Test results 9/9 passed
+
+*Event Modal + Backend CRUD Persistence Completed*
+
+• Event creation now starts from a circular + button that opens a modal setup form
+• Same modal is reused for editing events and coach mapping updates
+• Event Management now persists CRUD to backend via deployed admin-validated Cloud Functions
+• Implemented and deployed endpoints: listEvents, upsertEvent, deleteEvent
+• Verified live backend CRUD smoke path (create → list → update → delete) succeeds
+
+📊 Test results 9/9 passed
+
+*Event Management Redesign + Multi-Coach Mapping Completed*
+
+• Event Management redesigned into structured setup form + standardized grid view
+• Admin can now map one or multiple coaches to each event using quick-select coach chips
+• Added event grid actions (icon-based with tooltips): edit/assign coaches, hide-show, registration open/coming-soon toggle, and delete
+• Added event search, visibility filter, and pagination for cleaner high-volume event operations
+
+📊 Test results 9/9 passed
+
+*Collapsible Left Menu with Icon Tooltips Completed*
+
+• Dashboard left navigation now supports collapse/expand using a dedicated arrow toggle
+• In collapsed mode, menu items render as icons only with hover tooltips
+• Expanded mode restores full menu labels and module text context
+• Mobile behavior remains unchanged while desktop benefits from compact navigation mode
+
+📊 Test results 9/9 passed
+
+*Responsive Wide-Screen Layout Enhancement Completed*
+
+• Increased dashboard shell max width so large screens use more available horizontal space
+• Main admin/guardian dashboard containers now expand fluidly up to wider caps while staying mobile-safe
+• Expanded key modal max widths for better data visibility on larger displays
+• Small-screen behavior remains responsive through existing width constraints and spacing rules
+
+📊 Test results 9/9 passed
+
+*Cross-Grid UX Standardization Completed*
+
+• Applied unified grid shell and subtle bordered-cell styling across admin, coach roster, leaderboard, and agenda tables
+• Coach attendance grid now uses icon action controls with tooltips for row-level actions
+• Added pagination + rows selector to coach attendance and coach leaderboard grids for consistent navigation behavior
+• All primary data grids now follow a common table visual language and pagination pattern
+
+📊 Test results 9/9 passed
+
+*Admin Grid UX Standardization Completed*
+
+• Admin User Management action controls now use icon-only buttons with tooltips for cleaner layout
+• Added subtle cell borders and contained table shell to avoid floating-card appearance
+• Added pagination controls with rows-per-page selector and previous/next navigation
+• Grid now shows range summary (showing X-Y of total) for consistent data-table behavior
+
+📊 Test results 9/9 passed
+
+*Admin User List Cloud Sync Completed*
+
+• Admin User Management now loads real Firebase accounts instead of only local demo users
+• Added secure Cloud Function endpoint to list accounts for authenticated active admin sessions
+• Admin table now includes cloud-created student and coach profiles
+• Verified list endpoint returns active admin, student, and coach records
+
+📊 Test results 9/9 passed
+
+*Student Signup + UX Guard Update Completed*
+
+• Student signup no longer requires student email input
+• Parent/guardian email remains mandatory for student registration
+• Student account email now resolves smartly: uses student email when provided, otherwise falls back to guardian email
+• Cloud registration now allows shared email across different accounts (coach + guardian/student scenarios)
+• Login continues to support unique identity through Account ID when an email maps to multiple accounts
+• Auth form now shows processing state (Creating account... / Logging in...) and disables submit to prevent duplicate requests
+
+📊 Test results 9/9 passed
+
+*Admin Access Update Completed*
+
+• Preloaded admin account is available in app for immediate data-management access
+• Default admin login remains: admin@camp.local with password admin123
+• Admin dashboard User Management now includes Admin Security panel
+• Logged-in admin can change own password with current-password validation
+• New password validation added (required fields, match check, minimum 6 characters)
+• Cloud-managed account guard added to avoid unsafe local password edits for backend-auth users
+
+📊 Test results 9/9 passed
+
+*Player Development Tracker MVP2*
+
+• New marketing landing page for cricket camp with register/login CTAs
+• Parent and player signup flow with role-based login and dashboard tiles
+• Default admin and coach users pre-seeded for immediate access
+• Coach/admin dashboard retains player tracking, attendance, metrics, and report workflow
+• Coach dashboard now includes a *Leaderboard* tile to rank players by overall score per event
+• Coach dashboard flow now starts from assigned event tiles, with event-level attendance + leaderboard tabs and player click to open assessment/progress modal
+• Coach event workspace now includes *Insights* and *Agenda* tabs; Agenda shows day-wise training plan (Day 1-Day 16) for configured events
+• Upcoming Events on home page now includes an agenda icon per event; users can open a read-only day-wise agenda modal before deciding to register
+• Admin dashboard restructured into modules: *User Management*, *Event Management*, *Application Settings*, and *Platform Insights*
+• User Management simplified to a searchable/filterable user grid with metadata and core actions only (inactivate, make coach, make admin)
+• Event Management now supports coach assignment (single/multi via IDs), agenda template attachment, and event-level agenda status visibility
+• Application Settings now controls maintenance mode, public signup, new enrollments, and guardian access links
+• Student dashboard refactored into modules: *My Profile*, *My Events*, *My Attendance*, *Skill Progress*, *Coach Notes*, and *Weekly Goals*
+• Student *My Events* now shows enrolled event cards with day-wise agenda context; *Skill Progress* includes chart-based improvement view
+• Parent/Guardian dashboard upgraded with module parity: *Child Profile*, *Child Events*, *Attendance*, *Skill Progress*, and *Coach Feedback*
+• Guardian view now includes child event cards with current day agenda context, detailed attendance grid, and skill improvement chart
+• Dashboard shell unified across roles with a consistent left-side module navigation for Admin, Coach, Student, and Guardian views
+• Responsive pass completed for mobile/tablet/desktop: side-nav adapts to horizontal scroll chips on small screens, tab rows are horizontally scrollable, and modal spacing/widths are optimized for compact viewports
+• Landing header and upcoming event cards further optimized for small screens: logo/nav/actions stack cleanly, typography scales down, and action controls align better on mobile
+• Extra mobile header simplification applied for very small screens: only logo + key icons + signup are shown; animated brand text is hidden in compact layout to prevent alignment issues
+• Player assessment/progress now opens in a full-width modal dialog with top-right close (X) to maximize usable screen area
+• Coach attendance tab simplified to a clean player list (name, role, age); clicking player opens modal with Day 1-Day N selector for assessment entry
+• Assessment tab modernized to a split layout: key areas listed on left, selected area metrics editable on the right
+• Parent/player dashboard provides linked profile, attendance, progress, and feedback summary
+• LBW Decision Lab engine refactored to strict sequential checks: legal delivery, interception order, pitch/impact constraints, stump projection, and edge/height guards
+• DRS-aware outcomes integrated with thresholds for 3m guard, 40cm pitch-to-impact insufficiency, corridor overlap, and middle-stump centering in 2.5m-3.5m zone
+• LBW feedback now uses evaluator truth only: law verdict, DRS status, reason, and full scenario factors stay aligned for both answer and timeout flows
+• Medium/Hard LBW factor cards now show delivery legality and interception type to match the sequential law flow shown in explanations
+• Inline auth V1 policy implemented in code scaffolding: internal account IDs, pending verification state, activation on verification, and 7-day unverified purge eligibility logic
+• Firestore rules moved from global deny-only to conservative account lifecycle scaffold (`accounts` + `account_verification_tokens`) while keeping unmodeled business collections locked
+• Master test suite extended with account lifecycle tests for pending account creation, activation, purge timing, and verification token expiry windows
+• Signup/login flow now uses account lifecycle in-app: signup creates pending account, login supports account ID/email credentials, and active verification status is required before dashboard access
+• Email uniqueness check removed from signup to match internal-ID-first model; if multiple matches exist on email login, user is prompted to use Account ID
+• Automatic 7-day purge now runs against local account state and removes expired unverified accounts with linked player data cleanup
+• Firebase bootstrap scaffolding added: Web SDK dependency, `.env` template, strict initializer module (`src/lib/firebase.js`), and setup guide (`docs/firebase-setup.md`)
+• Project is now ready for Firebase project values; runtime will fail fast if required config keys are missing to prevent silent misconfiguration
+• App branding logo updated to *Inningsforge* by replacing header logo asset with `asset/Inningsforge.png`
+• Header branding polished: Inningsforge logo size increased for visibility and signup ball CTA nudged upward for improved vertical centering
+• Firebase project config wired for local development (`.env`) using *inningsforge* project values and env files protected in `.gitignore`
+• Firebase initializer upgraded with optional browser-safe Analytics bootstrap while preserving Auth and Firestore exports
+• Firebase cloud auth flow wired end-to-end in frontend: signup/login now calls Cloud Functions and signs in via custom token when Firebase mode is enabled
+• Firestore security rules now enforce role-aware access for *players*, *attendance*, *metrics*, and *reports* using verified session claims
+• Players and attendance data now persist to Firestore with safe fallback to demo state when Firebase env/config is unavailable
+• Metrics persistence added to Firestore with baseline/final tracking and computed improvement fields per metric entry
+• Report snapshots now persist to Firestore for baseline-ready players; snapshots are removed when report data is not ready
+• Firebase auth session now signs out cleanly from frontend logout to prevent stale claim sessions
+• Environment/setup docs updated with `VITE_FUNCTIONS_BASE_URL` requirement for auth endpoint routing
+• Session-day assessments now persist in Firestore `sessions` collection (`event_id + player_id + day_number`) including coach notes and metric ratings
+• Firestore rules now allow role-safe read/write on `sessions` with payload shape validation and player-linked read authorization
+• App bootstrap now hydrates persisted session assessments so coach trend charts and day notes survive reloads
+• Player documents now persist derived `eventIds` and `assignedCoachIds` to support secure event/coach ownership checks
+• Firestore rules hardened so coach access to *players*, *attendance*, *metrics*, *sessions*, and *reports* is restricted to assigned players only
+• App auto-syncs player assignment metadata from event enrollments + coach assignment mapping to keep access rules accurate over time
+• Coach day notes persisted in `sessions` now auto-update player feedback summaries and report feedback text (no longer demo-only static text)
+• Signup lifecycle upgraded to verification-first: form submission creates pending request, verification email is sent, and internal account is created only after email verification
+• Post-verification account details email now sends Account ID and role; frontend handles verification-link query params and shows login-ready notice
+• Login backend now supports resilient auth mode fallback: when custom token issuance fails, API returns verified account + login email for Firebase email/password sign-in
+• Frontend cloud login flow now supports both auth modes (custom token and email/password) so verified users can still access dashboards without 500 login failures
+• Option 2 UX finalized: verification links include account ID (`aid`) and success notices prominently show the Account ID to use for login
+• Live flow validation completed: register → verify → login account resolution works with sequential IDs (`IF_C_00006`) and Firebase sign-in succeeds
+• Login 401 case-mismatch bug fixed: account IDs are now normalized safely (UI + backend), so `IF_C_00002` and `if_c_00002` resolve the same account
+• Login card UX cleaned to avoid wrong input usage: full-name field now appears only on signup, not on login
+• Production smoke test passed with fresh account (`IF_C_00004`): uppercase and lowercase account-ID login both succeed
+
+📊 Test results 9/9 passed

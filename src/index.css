@@ -1,0 +1,139 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=Space+Grotesk:wght@400;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: "Space Grotesk", sans-serif;
+  background: radial-gradient(circle at top, rgba(186, 230, 253, 0.22), transparent 42%),
+    radial-gradient(circle at 18% 18%, rgba(125, 211, 252, 0.2), transparent 38%),
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.15), transparent 30%),
+    #0b1f3a;
+  min-height: 100vh;
+}
+
+.glass {
+  background: linear-gradient(135deg, rgba(186, 230, 253, 0.08), rgba(255, 255, 255, 0.06));
+  border: 1px solid rgba(186, 230, 253, 0.28);
+  box-shadow: 0 18px 40px rgba(8, 47, 73, 0.35);
+}
+
+.header-pitch {
+  background-image:
+    linear-gradient(180deg, rgba(6, 17, 30, 0.28), rgba(6, 17, 30, 0.22)),
+    url("../asset/pitch-top-view.svg");
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+
+.header-lane {
+  margin: 18px 26px;
+  background: linear-gradient(90deg, rgba(8, 22, 36, 0.3), rgba(8, 22, 36, 0.24));
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.register-ball-button {
+  position: relative;
+  width: 112px;
+  height: 92px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+}
+
+.register-ball-wrap {
+  position: absolute;
+  top: -4px;
+  left: 64%;
+  transform: translateX(-50%);
+  width: 108px;
+  height: 86px;
+  isolation: isolate;
+}
+
+.register-ball-shadow {
+  position: absolute;
+  left: 50%;
+  top: 52px;
+  width: 62px;
+  height: 16px;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.08) 70%);
+  filter: blur(1.4px);
+  transform: translateX(-50%);
+}
+
+.register-ball-photo {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 74px;
+  height: 74px;
+  border-radius: 9999px;
+  object-fit: cover;
+  transform: translateX(-50%);
+  transform-origin: 50% 75%;
+  box-shadow: inset -4px -7px 10px rgba(0, 0, 0, 0.12), inset 3px 4px 8px rgba(255, 255, 255, 0.06);
+  filter: drop-shadow(0 6px 9px rgba(0, 0, 0, 0.3));
+  -webkit-mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.9) 78%, transparent 100%);
+  mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 1) 66%, rgba(0, 0, 0, 0.9) 78%, transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+.register-label-svg {
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 108px;
+  height: 38px;
+  transform: translateX(-50%);
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75));
+}
+
+.register-label-text {
+  fill: #ffffff;
+  stroke: rgba(15, 23, 42, 0.75);
+  stroke-width: 0.6;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-anchor: middle;
+}
+
+.bail-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 118px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: linear-gradient(180deg, rgba(166, 124, 82, 0.85), rgba(120, 84, 51, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 6px rgba(0, 0, 0, 0.3);
+  color: #f8fafc;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.bail-link:hover,
+.bail-link:focus-visible {
+  text-decoration: none;
+  border-color: rgba(186, 230, 253, 0.65);
+  color: #f8fafc;
+}
+

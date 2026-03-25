@@ -1,0 +1,18 @@
+{
+  "name": "inningsforge-functions",
+  "private": true,
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.1.0",
+    "nodemailer": "^6.9.14"
+  }
+}
