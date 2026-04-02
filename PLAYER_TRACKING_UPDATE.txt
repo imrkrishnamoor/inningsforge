@@ -1,3 +1,36 @@
+*Email Masking + Admin Enrollment + Password Reset Added*
+
+• Masked all displayed emails across dashboards, admin diagnostics, and session claims
+• Admins can assign events to students directly from User Management
+• Admin password reset sets default Welcome@123 and forces password change on next login
+• User profile now includes a cloud password update form
+
+📊 Test results 9/9 passed
+
+*Coach Role Update Option Added*
+
+• Coach roster now shows "Not set" when player role is Student/Player
+• Added coach modal to set capability role (Batter, Bowler, All Rounder, Wicket Keeper)
+• Role updates persist via Cloud Functions with coach access checks
+
+📊 Test results 9/9 passed
+
+*Guardian Link Target Fix Added*
+
+• Guardian links now include player id to avoid token collisions
+• Guardian view resolves by token + player id when available
+• Legacy links still resolve by token but warn on duplicates
+
+📊 Test results 9/9 passed
+
+*Guardian Dashboard Cloud Fetch Added*
+
+• Guardian links now load player data via a cloud endpoint when no auth session exists
+• Prevents fallback to demo data and wrong student dashboards
+• Guardian access is blocked when guardian access is disabled in settings
+
+📊 Test results 9/9 passed
+
 *Coach Persistence Guard Added*
 
 • Prevented coach sessions from attempting direct player writes blocked by Firestore rules
@@ -162,6 +195,30 @@
 • Backfills top-level role from profile.role when missing
 • Login flow now normalizes role before issuing custom claims
 • Migration job normalizes existing accounts for consistent admin access
+
+📊 Test results 9/9 passed
+
+*Coach Age Update Option Added*
+
+• Coach roster now includes an age editor for assigned players
+• Age updates persist via Cloud Functions with coach access checks
+• Age remains optional for student signup and can be left blank
+
+📊 Test results 9/9 passed
+
+*Functions Runtime + SDK Upgrade*
+
+• Cloud Functions runtime now targets Node.js 22
+• firebase-functions dependency updated to latest
+• No application logic changes; runtime only
+
+📊 Test results 9/9 passed
+
+*Admin User Status Persistence Fixed*
+
+• Admin user status toggles now persist via Cloud Functions
+• Status reflects account verification_status on refresh
+• Inactive users remain blocked on next login
 
 📊 Test results 9/9 passed
 

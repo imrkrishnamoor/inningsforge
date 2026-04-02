@@ -81,6 +81,13 @@ export const listAccountsViaFunctions = async ({ idToken }) =>
     idToken,
   });
 
+export const updateAccountStatusViaFunctions = async ({ idToken, accountId, status }) =>
+  postJson("updateAccountStatus", {
+    idToken,
+    accountId,
+    status,
+  });
+
 export const listCoachRosterViaFunctions = async ({ idToken }) =>
   postJson("listCoachRoster", {
     idToken,
@@ -112,9 +119,28 @@ export const getPlayerProfileViaFunctions = async ({ idToken }) =>
     idToken,
   });
 
+export const getGuardianDashboardViaFunctions = async ({ guardianToken, playerId }) =>
+  postJson("getGuardianDashboard", {
+    guardianToken,
+    playerId,
+  });
+
 export const updatePlayerEnrollmentViaFunctions = async ({ idToken, eventIds, assignedCoachIds }) =>
   postJson("updatePlayerEnrollment", {
     idToken,
+    eventIds,
+    assignedCoachIds,
+  });
+
+export const updatePlayerEnrollmentAdminViaFunctions = async ({
+  idToken,
+  playerId,
+  eventIds,
+  assignedCoachIds,
+}) =>
+  postJson("updatePlayerEnrollmentAdmin", {
+    idToken,
+    playerId,
     eventIds,
     assignedCoachIds,
   });
@@ -143,6 +169,20 @@ export const updateWeeklyGoalsViaFunctions = async ({
     weeklyGoalHistory,
   });
 
+export const updatePlayerRoleViaFunctions = async ({ idToken, playerId, role }) =>
+  postJson("updatePlayerRole", {
+    idToken,
+    playerId,
+    role,
+  });
+
+export const updatePlayerAgeViaFunctions = async ({ idToken, playerId, age }) =>
+  postJson("updatePlayerAge", {
+    idToken,
+    playerId,
+    age,
+  });
+
 export const upsertAppSettingsViaFunctions = async ({ idToken, settings }) =>
   postJson("upsertAppSettings", {
     idToken,
@@ -153,6 +193,18 @@ export const upsertEventViaFunctions = async ({ idToken, event }) =>
   postJson("upsertEvent", {
     idToken,
     event,
+  });
+
+export const resetAccountPasswordViaFunctions = async ({ idToken, accountId }) =>
+  postJson("resetAccountPassword", {
+    idToken,
+    accountId,
+  });
+
+export const updateAccountPasswordViaFunctions = async ({ idToken, newPassword }) =>
+  postJson("updateAccountPassword", {
+    idToken,
+    newPassword,
   });
 
 export const deleteEventViaFunctions = async ({ idToken, eventId }) =>

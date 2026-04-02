@@ -12,7 +12,11 @@ const db = admin.firestore();
 const ACCOUNT_STATUSES = {
   PENDING_VERIFICATION: "pending_verification",
   ACTIVE: "active",
+  INACTIVE: "inactive",
 };
+
+const DEFAULT_RESET_PASSWORD = "Welcome@123";
+const PLAYER_ROLE_OPTIONS = ["Batter", "Bowler", "All Rounder", "Wicket Keeper"];
 
 const TOKEN_TTL_DAYS = 7;
 const TOKEN_TTL_MS = TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
@@ -370,6 +374,52 @@ const verifyPlayerRequest = async (idToken) => {
   }
 
   return { ok: true, decodedToken, playerUserId: playerUid };
+};
+
+const verifyActiveAccountRequest = async (idToken) => {
+  if (!idToken) {
+    return { ok: false, status: 400, error: "idToken is required" };
+  }
+
+  let decodedToken;
+  try {
+    decodedToken = await admin.auth().verifyIdToken(String(idToken));
+  } catch (error) {
+    return { ok: false, status: 401, error: "Invalid auth token" };
+  }
+
+  const verificationStatus = String(decodedToken.verification_status || "").trim().toLowerCase();
+  const accountUid = String(decodedToken.uid || "").trim();
+
+  if (accountUid && verificationStatus === ACCOUNT_STATUSES.ACTIVE) {
+    return { ok: true, decodedToken, accountId: accountUid };
+  }
+
+  if (!accountUid) {
+    return { ok: false, status: 403, error: "Active account required" };
+  }
+
+  const accountDoc = await db.collection("accounts").doc(accountUid).get();
+  const accountIdQuery = await db
+    .collection("accounts")
+    .where("account_id", "==", accountUid)
+    .limit(1)
+    .get();
+
+  const accountDocs = [accountDoc, ...(accountIdQuery.empty ? [] : accountIdQuery.docs)];
+  const hasActiveAccount = accountDocs.some((docSnap) => {
+    if (!docSnap || !docSnap.exists) {
+      return false;
+    }
+    const account = docSnap.data() || {};
+    return isActiveAccount(account);
+  });
+
+  if (!hasActiveAccount) {
+    return { ok: false, status: 403, error: "Active account required" };
+  }
+
+  return { ok: true, decodedToken, accountId: accountUid };
 };
 
 const normalizeEventRecord = (eventDocId, data = {}) => ({
@@ -963,6 +1013,11 @@ exports.loginAccount = onRequest({ region: "us-central1" }, async (req, res) => 
     }
 
     if (!(account.email_verified === true && account.verification_status === ACCOUNT_STATUSES.ACTIVE)) {
+      const normalizedStatus = String(account.verification_status || "").trim().toLowerCase();
+      if (normalizedStatus === ACCOUNT_STATUSES.INACTIVE) {
+        sendJson(res, 403, { error: "Account is inactive", reason: "account_inactive" });
+        return;
+      }
       if (Date.now() > Number(account.verification_deadline_at)) {
         sendJson(res, 410, { error: "Verification window expired" });
         return;
@@ -996,6 +1051,7 @@ exports.loginAccount = onRequest({ region: "us-central1" }, async (req, res) => 
       role: account.role,
       verification_status: account.verification_status,
       account_email: account.email,
+      force_password_reset: account.force_password_reset === true,
     };
 
     try {
@@ -1072,6 +1128,7 @@ exports.listAccounts = onRequest({ region: "us-central1" }, async (req, res) => 
           role: String(account.role || ""),
           email_verified: account.email_verified === true,
           verification_status: String(account.verification_status || ""),
+          force_password_reset: account.force_password_reset === true,
           created_at: Number(account.created_at || 0),
           verification_deadline_at: Number(account.verification_deadline_at || 0),
         };
@@ -1092,6 +1149,231 @@ exports.listAccounts = onRequest({ region: "us-central1" }, async (req, res) => 
       stack: error?.stack || null,
     });
     sendJson(res, 500, { error: "Failed to list accounts" });
+  }
+});
+
+exports.updateAccountStatus = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, accountId, status } = req.body || {};
+    const adminCheck = await verifyAdminRequest(idToken);
+    if (!adminCheck.ok) {
+      sendJson(res, adminCheck.status, { error: adminCheck.error });
+      return;
+    }
+
+    const normalizedAccountId = String(accountId || "").trim();
+    const normalizedStatus = String(status || "").trim().toLowerCase();
+    if (!normalizedAccountId || !normalizedStatus) {
+      sendJson(res, 400, { error: "accountId and status are required" });
+      return;
+    }
+
+    if (![ACCOUNT_STATUSES.ACTIVE, ACCOUNT_STATUSES.INACTIVE].includes(normalizedStatus)) {
+      sendJson(res, 400, { error: "Invalid status" });
+      return;
+    }
+
+    const accountRef = db.collection("accounts").doc(normalizedAccountId);
+    const accountSnap = await accountRef.get();
+    if (!accountSnap.exists) {
+      sendJson(res, 404, { error: "Account not found" });
+      return;
+    }
+
+    const account = accountSnap.data() || {};
+    await accountRef.set(
+      {
+        verification_status: normalizedStatus,
+        updated_at: Date.now(),
+      },
+      { merge: true }
+    );
+
+    try {
+      const claims = {
+        role: String(account.role || "").trim(),
+        verification_status: normalizedStatus,
+        account_email: String(account.email || "").trim().toLowerCase(),
+      };
+      await admin.auth().setCustomUserClaims(normalizedAccountId, claims);
+    } catch (error) {
+      logger.warn("updateAccountStatus claims update failed", {
+        message: error?.message || "unknown",
+        code: error?.code || "unknown",
+      });
+    }
+
+    sendJson(res, 200, { accountId: normalizedAccountId, status: normalizedStatus });
+  } catch (error) {
+    logger.error("updateAccountStatus failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to update account status" });
+  }
+});
+
+exports.resetAccountPassword = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, accountId } = req.body || {};
+    const adminCheck = await verifyAdminRequest(idToken);
+    if (!adminCheck.ok) {
+      sendJson(res, adminCheck.status, { error: adminCheck.error });
+      return;
+    }
+
+    const normalizedAccountId = String(accountId || "").trim();
+    if (!normalizedAccountId) {
+      sendJson(res, 400, { error: "accountId is required" });
+      return;
+    }
+
+    let accountSnap = await db.collection("accounts").doc(normalizedAccountId).get();
+    if (!accountSnap.exists) {
+      const accountIdQuery = await db
+        .collection("accounts")
+        .where("account_id", "==", normalizedAccountId)
+        .limit(1)
+        .get();
+      if (!accountIdQuery.empty) {
+        accountSnap = accountIdQuery.docs[0];
+      }
+    }
+
+    if (!accountSnap.exists) {
+      sendJson(res, 404, { error: "Account not found" });
+      return;
+    }
+
+    const account = accountSnap.data() || {};
+    const safeAccountId = String(account.account_id || accountSnap.id || normalizedAccountId).trim();
+    if (!safeAccountId) {
+      sendJson(res, 400, { error: "Account ID is invalid" });
+      return;
+    }
+
+    const updatedAccount = {
+      ...account,
+      force_password_reset: true,
+      updated_at: Date.now(),
+    };
+
+    await accountSnap.ref.set(
+      {
+        force_password_reset: true,
+        updated_at: updatedAccount.updated_at,
+      },
+      { merge: true }
+    );
+
+    await ensureAuthUserWithClaims({
+      accountId: safeAccountId,
+      account: updatedAccount,
+      claims: {
+        role: String(account.role || ""),
+        verification_status: account.verification_status,
+        account_email: account.email,
+        force_password_reset: true,
+      },
+    });
+
+    await admin.auth().updateUser(safeAccountId, { password: DEFAULT_RESET_PASSWORD });
+
+    sendJson(res, 200, { accountId: safeAccountId, reset: true });
+  } catch (error) {
+    logger.error("resetAccountPassword failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to reset password" });
+  }
+});
+
+exports.updateAccountPassword = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, newPassword } = req.body || {};
+    const accountCheck = await verifyActiveAccountRequest(idToken);
+    if (!accountCheck.ok) {
+      sendJson(res, accountCheck.status, { error: accountCheck.error });
+      return;
+    }
+
+    const normalizedPassword = String(newPassword || "");
+    if (normalizedPassword.length < 6) {
+      sendJson(res, 400, { error: "Password must be at least 6 characters" });
+      return;
+    }
+
+    const safeAccountId = String(accountCheck.accountId || "").trim();
+    if (!safeAccountId) {
+      sendJson(res, 400, { error: "Account ID is invalid" });
+      return;
+    }
+
+    let accountSnap = await db.collection("accounts").doc(safeAccountId).get();
+    if (!accountSnap.exists) {
+      const accountIdQuery = await db
+        .collection("accounts")
+        .where("account_id", "==", safeAccountId)
+        .limit(1)
+        .get();
+      if (!accountIdQuery.empty) {
+        accountSnap = accountIdQuery.docs[0];
+      }
+    }
+
+    if (!accountSnap.exists) {
+      sendJson(res, 404, { error: "Account not found" });
+      return;
+    }
+
+    const account = accountSnap.data() || {};
+
+    await admin.auth().updateUser(safeAccountId, { password: normalizedPassword });
+    await accountSnap.ref.set(
+      {
+        force_password_reset: false,
+        updated_at: Date.now(),
+      },
+      { merge: true }
+    );
+
+    await ensureAuthUserWithClaims({
+      accountId: safeAccountId,
+      account: {
+        ...account,
+        force_password_reset: false,
+      },
+      claims: {
+        role: String(account.role || ""),
+        verification_status: account.verification_status,
+        account_email: account.email,
+        force_password_reset: false,
+      },
+    });
+
+    sendJson(res, 200, { updated: true });
+  } catch (error) {
+    logger.error("updateAccountPassword failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to update password" });
   }
 });
 
@@ -1242,6 +1524,180 @@ exports.getPlayerProfile = onRequest({ region: "us-central1" }, async (req, res)
   }
 });
 
+exports.getGuardianDashboard = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { guardianToken, playerId } = req.body || {};
+    const normalizedToken = String(guardianToken || "").trim();
+    const normalizedPlayerId = String(playerId || "").trim();
+
+    if (!normalizedToken) {
+      sendJson(res, 400, { error: "guardianToken is required" });
+      return;
+    }
+
+    const settingsRef = db.collection(APP_SETTINGS_DOC_PATH.collection).doc(APP_SETTINGS_DOC_PATH.doc);
+    const settingsSnap = await settingsRef.get();
+    const settings = settingsSnap.exists
+      ? normalizeAppSettings(settingsSnap.data() || {})
+      : { ...DEFAULT_APP_SETTINGS };
+
+    if (!settings.guardianAccessEnabled) {
+      sendJson(res, 403, { error: "Guardian access is disabled" });
+      return;
+    }
+
+    let playerSnap = null;
+    if (normalizedPlayerId) {
+      const directSnap = await db.collection("players").doc(normalizedPlayerId).get();
+      if (directSnap.exists) {
+        playerSnap = directSnap;
+      }
+    } else {
+      const tokenQuery = await db
+        .collection("players")
+        .where("guardianAccessToken", "==", normalizedToken)
+        .limit(2)
+        .get();
+      if (tokenQuery.size === 1) {
+        playerSnap = tokenQuery.docs[0];
+      } else if (tokenQuery.size > 1) {
+        sendJson(res, 409, { error: "Multiple guardian tokens matched. Include pid." });
+        return;
+      }
+    }
+
+    if (!playerSnap || !playerSnap.exists) {
+      sendJson(res, 404, { error: "Guardian profile not found" });
+      return;
+    }
+
+    const playerData = playerSnap.data() || {};
+    if (String(playerData.guardianAccessToken || "").trim() !== normalizedToken) {
+      sendJson(res, 403, { error: "Guardian token mismatch" });
+      return;
+    }
+
+    const attendanceRows = Array(16).fill("");
+    const attendanceSnap = await db
+      .collection("attendance")
+      .where("player_id", "==", playerSnap.id)
+      .get();
+
+    attendanceSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const dayNumber = Number(data.day_number);
+      const status = data.status;
+      if (!Number.isInteger(dayNumber) || dayNumber < 1 || dayNumber > 16) {
+        return;
+      }
+      if (status !== "P" && status !== "A") {
+        return;
+      }
+      attendanceRows[dayNumber - 1] = status;
+    });
+
+    const metrics = {};
+    const metricsSnap = await db
+      .collection("metrics")
+      .where("player_id", "==", playerSnap.id)
+      .get();
+
+    metricsSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const metricKey = String(data.metric_key || "");
+      if (!metricKey) {
+        return;
+      }
+      const baselineValue = data.baseline_value;
+      const finalValue = data.final_value;
+      metrics[metricKey] = {
+        baseline:
+          baselineValue === null || baselineValue === undefined || baselineValue === ""
+            ? ""
+            : String(baselineValue),
+        final:
+          finalValue === null || finalValue === undefined || finalValue === ""
+            ? ""
+            : String(finalValue),
+      };
+    });
+
+    let latestFeedback = "";
+    let latestDayIndex = -1;
+    const sessionsSnap = await db
+      .collection("sessions")
+      .where("player_id", "==", playerSnap.id)
+      .get();
+
+    sessionsSnap.forEach((docSnap) => {
+      const data = docSnap.data() || {};
+      const dayNumber = Number(data.day_number);
+      const note = String(data.notes || "").trim();
+      if (!note || !Number.isInteger(dayNumber)) {
+        return;
+      }
+      if (dayNumber >= latestDayIndex) {
+        latestDayIndex = dayNumber;
+        latestFeedback = note;
+      }
+    });
+
+    sendJson(res, 200, {
+      player: {
+        id: playerSnap.id,
+        name: String(playerData.name || ""),
+        age: String(playerData.age || ""),
+        role: String(playerData.role || ""),
+        guardianEmail: String(playerData.guardianEmail || ""),
+        guardianAccessToken: String(playerData.guardianAccessToken || ""),
+        playerUserId: String(playerData.playerUserId || ""),
+        eventIds: Array.isArray(playerData.eventIds)
+          ? playerData.eventIds.map((value) => String(value))
+          : [],
+        assignedCoachIds: Array.isArray(playerData.assignedCoachIds)
+          ? playerData.assignedCoachIds.map((value) => String(value))
+          : [],
+        weeklyGoals: Array.isArray(playerData.weeklyGoals)
+          ? playerData.weeklyGoals.map((value) => String(value))
+          : [],
+        weeklyGoalProgress: Array.isArray(playerData.weeklyGoalProgress)
+          ? playerData.weeklyGoalProgress.map((entry) => ({
+              status: String(entry?.status || ""),
+              note: String(entry?.note || ""),
+            }))
+          : [],
+        weeklyGoalHistory: Array.isArray(playerData.weeklyGoalHistory)
+          ? playerData.weeklyGoalHistory.map((entry) => ({
+              weekStart: String(entry?.weekStart || ""),
+              goals: Array.isArray(entry?.goals) ? entry.goals.map((value) => String(value)) : [],
+              progress: Array.isArray(entry?.progress)
+                ? entry.progress.map((progressEntry) => ({
+                    status: String(progressEntry?.status || ""),
+                    note: String(progressEntry?.note || ""),
+                  }))
+                : [],
+              updatedAt: Number(entry?.updatedAt || 0),
+            }))
+          : [],
+      },
+      attendance: attendanceRows,
+      metrics,
+      feedback: latestFeedback,
+    });
+  } catch (error) {
+    logger.error("getGuardianDashboard failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to load guardian dashboard" });
+  }
+});
+
 exports.updatePlayerEnrollment = onRequest({ region: "us-central1" }, async (req, res) => {
   if (!requirePostJson(req, res)) {
     return;
@@ -1301,6 +1757,194 @@ exports.updatePlayerEnrollment = onRequest({ region: "us-central1" }, async (req
       stack: error?.stack || null,
     });
     sendJson(res, 500, { error: "Failed to update player enrollment" });
+  }
+});
+
+exports.updatePlayerEnrollmentAdmin = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, playerId, eventIds, assignedCoachIds } = req.body || {};
+    const adminCheck = await verifyAdminRequest(idToken);
+    if (!adminCheck.ok) {
+      sendJson(res, adminCheck.status, { error: adminCheck.error });
+      return;
+    }
+
+    const normalizedPlayerId = String(playerId || "").trim();
+    if (!normalizedPlayerId) {
+      sendJson(res, 400, { error: "playerId is required" });
+      return;
+    }
+
+    const playerRef = db.collection("players").doc(normalizedPlayerId);
+    const playerSnap = await playerRef.get();
+    if (!playerSnap.exists) {
+      sendJson(res, 404, { error: "Player profile not found" });
+      return;
+    }
+
+    const existing = playerSnap.data() || {};
+    const normalizedEventIds = Array.isArray(eventIds)
+      ? eventIds.map((value) => String(value || "").trim()).filter(Boolean)
+      : Array.isArray(existing.eventIds)
+        ? existing.eventIds
+        : [];
+    const normalizedCoachIds = Array.isArray(assignedCoachIds)
+      ? assignedCoachIds.map((value) => String(value || "").trim().toUpperCase()).filter(Boolean)
+      : Array.isArray(existing.assignedCoachIds)
+        ? existing.assignedCoachIds
+        : [];
+
+    await playerRef.set(
+      {
+        eventIds: normalizedEventIds,
+        assignedCoachIds: normalizedCoachIds,
+        updated_at: Date.now(),
+      },
+      { merge: true }
+    );
+
+    sendJson(res, 200, {
+      playerId: normalizedPlayerId,
+      eventIds: normalizedEventIds,
+      assignedCoachIds: normalizedCoachIds,
+    });
+  } catch (error) {
+    logger.error("updatePlayerEnrollmentAdmin failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to update player enrollment" });
+  }
+});
+
+exports.updatePlayerRole = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, playerId, role } = req.body || {};
+    const coachCheck = await verifyCoachRequest(idToken);
+    if (!coachCheck.ok) {
+      sendJson(res, coachCheck.status, { error: coachCheck.error });
+      return;
+    }
+
+    const normalizedPlayerId = String(playerId || "").trim();
+    const normalizedRole = String(role || "").trim();
+    if (!normalizedPlayerId || !normalizedRole) {
+      sendJson(res, 400, { error: "playerId and role are required" });
+      return;
+    }
+
+    if (!PLAYER_ROLE_OPTIONS.includes(normalizedRole)) {
+      sendJson(res, 400, { error: "Invalid role option" });
+      return;
+    }
+
+    const hasCoachAccess = await verifyCoachAccessToPlayer({
+      coachId: coachCheck.coachId,
+      playerId: normalizedPlayerId,
+    });
+
+    if (!hasCoachAccess) {
+      sendJson(res, 403, { error: "Coach access required" });
+      return;
+    }
+
+    const playerRef = db.collection("players").doc(normalizedPlayerId);
+    const playerSnap = await playerRef.get();
+    if (!playerSnap.exists) {
+      sendJson(res, 404, { error: "Player profile not found" });
+      return;
+    }
+
+    await playerRef.set(
+      {
+        role: normalizedRole,
+        updated_at: Date.now(),
+      },
+      { merge: true }
+    );
+
+    sendJson(res, 200, { playerId: normalizedPlayerId, role: normalizedRole });
+  } catch (error) {
+    logger.error("updatePlayerRole failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to update player role" });
+  }
+});
+
+exports.updatePlayerAge = onRequest({ region: "us-central1" }, async (req, res) => {
+  if (!requirePostJson(req, res)) {
+    return;
+  }
+
+  try {
+    const { idToken, playerId, age } = req.body || {};
+    const coachCheck = await verifyCoachRequest(idToken);
+    if (!coachCheck.ok) {
+      sendJson(res, coachCheck.status, { error: coachCheck.error });
+      return;
+    }
+
+    const normalizedPlayerId = String(playerId || "").trim();
+    const normalizedAge = String(age ?? "").trim();
+    if (!normalizedPlayerId) {
+      sendJson(res, 400, { error: "playerId is required" });
+      return;
+    }
+
+    if (normalizedAge) {
+      const parsedAge = Number(normalizedAge);
+      const isValidNumber = Number.isInteger(parsedAge) && parsedAge > 0 && parsedAge < 100;
+      if (!isValidNumber) {
+        sendJson(res, 400, { error: "Invalid age value" });
+        return;
+      }
+    }
+
+    const hasCoachAccess = await verifyCoachAccessToPlayer({
+      coachId: coachCheck.coachId,
+      playerId: normalizedPlayerId,
+    });
+
+    if (!hasCoachAccess) {
+      sendJson(res, 403, { error: "Coach access required" });
+      return;
+    }
+
+    const playerRef = db.collection("players").doc(normalizedPlayerId);
+    const playerSnap = await playerRef.get();
+    if (!playerSnap.exists) {
+      sendJson(res, 404, { error: "Player profile not found" });
+      return;
+    }
+
+    await playerRef.set(
+      {
+        age: normalizedAge,
+        updated_at: Date.now(),
+      },
+      { merge: true }
+    );
+
+    sendJson(res, 200, { playerId: normalizedPlayerId, age: normalizedAge });
+  } catch (error) {
+    logger.error("updatePlayerAge failed", {
+      message: error?.message || "unknown",
+      code: error?.code || "unknown",
+      stack: error?.stack || null,
+    });
+    sendJson(res, 500, { error: "Failed to update player age" });
   }
 });
 
@@ -1573,6 +2217,7 @@ exports.migrateAccounts = onRequest({ region: "us-central1" }, async (req, res) 
             role: account.role,
             verification_status: account.verification_status,
             account_email: account.email,
+            force_password_reset: account.force_password_reset === true,
           },
         });
         summary.ensuredAuthUsers += 1;

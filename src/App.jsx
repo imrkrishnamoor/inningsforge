@@ -47,7 +47,9 @@ import {
   deleteEventViaFunctions,
   isCloudAuthEnabled,
   getPlayerProfileViaFunctions,
+  getGuardianDashboardViaFunctions,
   listAccountsViaFunctions,
+  updateAccountStatusViaFunctions,
   listAppSettingsViaFunctions,
   listCoachRosterViaFunctions,
   listEventsViaFunctions,
@@ -56,10 +58,15 @@ import {
   loginAccountViaFunctions,
   migrateAccountsViaFunctions,
   registerAccountViaFunctions,
+  resetAccountPasswordViaFunctions,
   sendFirebaseVerificationEmailFallback,
   signInWithEmailPasswordAndLoadAccount,
   signInWithCustomTokenAndLoadAccount,
   signOutFirebaseSession,
+  updatePlayerAgeViaFunctions,
+  updatePlayerRoleViaFunctions,
+  updateAccountPasswordViaFunctions,
+  updatePlayerEnrollmentAdminViaFunctions,
   updatePlayerEnrollmentViaFunctions,
   updateSessionAssessmentViaFunctions,
   updateWeeklyGoalsViaFunctions,
@@ -126,6 +133,18 @@ const getMetricKeysForRole = (roleLabel = "") => {
   return Array.from(new Set([...COMMON_METRIC_KEYS, ...roleSpecific]));
 };
 
+const formatCoachRoleLabel = (roleValue) => {
+  const rawRole = String(roleValue || "").trim();
+  if (!rawRole) {
+    return "Not set";
+  }
+  const normalized = rawRole.toLowerCase();
+  if (normalized === "student" || normalized === "player") {
+    return "Not set";
+  }
+  return rawRole;
+};
+
 const getReportReadyMetrics = (metrics = {}, metricKeys = ALL_METRIC_KEYS) =>
   metricKeys.reduce((acc, key) => {
     const metric = metrics[key];
@@ -184,6 +203,23 @@ const emptyMetrics = () =>
 
 const createGuardianAccessToken = () =>
   `guardian_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+const maskEmail = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+  const [local, domain] = raw.split("@");
+  if (!domain) {
+    return `${raw.slice(0, 1) || "*"}***`;
+  }
+  const safeLocal = local ? `${local.slice(0, 1)}***` : "***";
+  const domainParts = domain.split(".");
+  const domainHead = domainParts[0] || "";
+  const domainTail = domainParts.length > 1 ? `.${domainParts.slice(1).join(".")}` : "";
+  const safeDomain = `${domainHead.slice(0, 1) || "*"}***${domainTail}`;
+  return `${safeLocal}@${safeDomain}`;
+};
 
 const isPlayerRole = (role) => {
   const normalizedRole = String(role || "").trim().toLowerCase();
@@ -383,19 +419,21 @@ const getEventPriceLabel = (eventItem) => {
 
 const TILES_BY_ROLE = {
   admin: [
-          "User Management",
-          "Agenda Builder",
+    "My Profile",
+    "User Management",
+    "Agenda Builder",
     "Event Management",
     "Application Settings",
     "Platform Insights",
   ],
   coach: [
+    "My Profile",
     "Assigned Events",
     "Leaderboard",
     "Insights",
     "Agenda",
   ],
-  parent: ["Child Profile", "Child Events", "Attendance", "Skill Progress", "Coach Feedback"],
+  parent: ["My Profile", "Child Profile", "Child Events", "Attendance", "Skill Progress", "Coach Feedback"],
   player: [
     "My Profile",
     "All Events",
@@ -1543,6 +1581,48 @@ function Landing({ onOpenSignup, onLogin, upcomingEvents, appSettings, eventAgen
       ],
     },
   ];
+  const faqItems = [
+    {
+      question: "How do parents access the app?",
+      answer:
+        "Each player has a unique guardian link. We share it privately with parents. Open the link on any phone browser to view the dashboard.",
+    },
+    {
+      question: "What can parents see?",
+      answer:
+        "Attendance by day, weekly goals, coach assessments, skill progress charts, and the end-of-camp report.",
+    },
+    {
+      question: "How often is data updated?",
+      answer:
+        "Attendance is updated daily. Goals and assessments are updated weekly or after sessions. Reports are published at the end of camp.",
+    },
+    {
+      question: "What roles are available in InningsForge?",
+      answer:
+        "Admin manages setup, coaches record sessions, players view their progress, and guardians have read-only access to the player dashboard.",
+    },
+    {
+      question: "Can parents edit anything?",
+      answer:
+        "No. Parent access is view-only so records stay accurate and consistent.",
+    },
+    {
+      question: "What if the guardian link does not open?",
+      answer:
+        "Try opening in Chrome or Safari and ensure you are using the latest link. If it still fails, message the camp team for a fresh link.",
+    },
+    {
+      question: "Is my child data private?",
+      answer:
+        "Yes. Each guardian link is unique and displays only the linked player profile.",
+    },
+    {
+      question: "Can both parents use the same link?",
+      answer:
+        "Yes. The same guardian link can be used on multiple devices.",
+    },
+  ];
 
   const monthLabel = useMemo(
     () =>
@@ -1696,6 +1776,9 @@ function Landing({ onOpenSignup, onLogin, upcomingEvents, appSettings, eventAgen
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   <a href="#upcoming-events" className="bail-link" aria-label="Upcoming Events">
                     Upcoming Events
+                  </a>
+                  <a href="#faq" className="bail-link" aria-label="FAQ">
+                    FAQ
                   </a>
                   <a
                     href="https://wa.me/919962104107"
@@ -2030,6 +2113,24 @@ function Landing({ onOpenSignup, onLogin, upcomingEvents, appSettings, eventAgen
                       </li>
                     ))}
                   </ul>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section id="faq" className="glass mt-6 rounded-3xl p-6 text-sm text-slate-300">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-xs uppercase tracking-[0.25em] text-sky-200">FAQ</p>
+              <p className="text-xs text-slate-400">InningsForge access and roles</p>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {faqItems.map((item) => (
+                <article
+                  key={item.question}
+                  className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4"
+                >
+                  <h3 className="text-sm font-semibold text-slate-100">{item.question}</h3>
+                  <p className="mt-2 text-xs leading-5 text-slate-200">{item.answer}</p>
                 </article>
               ))}
             </div>
@@ -2638,8 +2739,23 @@ export default function App() {
   const coachWeeklyProgressBaselineRef = useRef("");
   const coachWeeklyGoalPlayerRef = useRef("");
   const [coachWeeklyGoalError, setCoachWeeklyGoalError] = useState("");
+  const [coachRoleModal, setCoachRoleModal] = useState({
+    isOpen: false,
+    player: null,
+  });
+  const [coachRoleSelection, setCoachRoleSelection] = useState("");
+  const [coachRoleError, setCoachRoleError] = useState("");
+  const [coachRoleSaving, setCoachRoleSaving] = useState(false);
+  const [coachAgeModal, setCoachAgeModal] = useState({
+    isOpen: false,
+    player: null,
+  });
+  const [coachAgeSelection, setCoachAgeSelection] = useState("");
+  const [coachAgeError, setCoachAgeError] = useState("");
+  const [coachAgeSaving, setCoachAgeSaving] = useState(false);
   const [eventAgendasByEvent, setEventAgendasByEvent] = useState({});
   const [adminUserStatusById, setAdminUserStatusById] = useState({});
+  const [adminUserStatusSavingById, setAdminUserStatusSavingById] = useState({});
   const [adminUserSearch, setAdminUserSearch] = useState("");
   const [adminUserRoleFilter, setAdminUserRoleFilter] = useState("all");
   const [adminUserPage, setAdminUserPage] = useState(1);
@@ -2662,10 +2778,26 @@ export default function App() {
   });
   const [adminPasswordError, setAdminPasswordError] = useState("");
   const [adminPasswordNotice, setAdminPasswordNotice] = useState("");
+  const [profilePasswordForm, setProfilePasswordForm] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [profilePasswordError, setProfilePasswordError] = useState("");
+  const [profilePasswordNotice, setProfilePasswordNotice] = useState("");
+  const [profilePasswordSaving, setProfilePasswordSaving] = useState(false);
   const [adminAccountLookup, setAdminAccountLookup] = useState("");
   const [adminAccountLookupResult, setAdminAccountLookupResult] = useState(null);
   const [adminAccountLookupError, setAdminAccountLookupError] = useState("");
   const [adminAccountLookupLoading, setAdminAccountLookupLoading] = useState(false);
+  const [adminEnrollmentModal, setAdminEnrollmentModal] = useState({
+    isOpen: false,
+    user: null,
+    player: null,
+  });
+  const [adminEnrollmentEventIds, setAdminEnrollmentEventIds] = useState([]);
+  const [adminEnrollmentError, setAdminEnrollmentError] = useState("");
+  const [adminEnrollmentSaving, setAdminEnrollmentSaving] = useState(false);
+  const [adminResettingUserId, setAdminResettingUserId] = useState("");
   const [adminMigrationResult, setAdminMigrationResult] = useState(null);
   const [adminMigrationError, setAdminMigrationError] = useState("");
   const [adminMigrationLoading, setAdminMigrationLoading] = useState(false);
@@ -2691,6 +2823,8 @@ export default function App() {
   const [lbwScore, setLbwScore] = useState({ attempted: 0, correct: 0 });
   const [firebaseAuthUid, setFirebaseAuthUid] = useState("");
   const [firebaseAuthClaims, setFirebaseAuthClaims] = useState(null);
+  const [guardianPayloadLoading, setGuardianPayloadLoading] = useState(false);
+  const [guardianPayloadError, setGuardianPayloadError] = useState("");
 
   const canUseFirestorePersistence =
     isFirestorePersistenceEnabled() &&
@@ -3236,6 +3370,7 @@ export default function App() {
 
         const response = await listAccountsViaFunctions({ idToken });
         if (!isMounted || !Array.isArray(response?.users) || response.users.length === 0) {
+          setAdminUserStatusById({});
           return;
         }
 
@@ -3266,6 +3401,7 @@ export default function App() {
                 email,
                 email_verified: account.email_verified === true,
                 verification_status: String(account.verification_status || ACCOUNT_STATUSES.PENDING_VERIFICATION),
+                force_password_reset: account.force_password_reset === true,
                 created_at: Number(account.created_at || Date.now()),
                 verification_deadline_at: Number(account.verification_deadline_at || Date.now()),
               },
@@ -3273,6 +3409,19 @@ export default function App() {
           });
 
           return Array.from(nextById.values());
+        });
+
+        setAdminUserStatusById(() => {
+          const nextStatus = {};
+          response.users.forEach((account) => {
+            const accountId = String(account.account_id || "").trim();
+            if (!accountId) {
+              return;
+            }
+            const normalizedStatus = String(account.verification_status || "").trim().toLowerCase();
+            nextStatus[accountId] = normalizedStatus === ACCOUNT_STATUSES.ACTIVE ? "active" : "disabled";
+          });
+          return nextStatus;
         });
       } catch (error) {
         console.error("Failed to load admin users from cloud", error);
@@ -3594,6 +3743,13 @@ export default function App() {
     return new URLSearchParams(window.location.search).get("guardian") || "";
   }, []);
 
+  const guardianPlayerId = useMemo(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return new URLSearchParams(window.location.search).get("pid") || "";
+  }, []);
+
   const guardianAccessBaseUrl = useMemo(() => {
     if (typeof window === "undefined") {
       return "";
@@ -3611,7 +3767,7 @@ export default function App() {
       showToast("No guardian access token available for this player.", "error");
       return;
     }
-    const link = `${guardianAccessBaseUrl}?guardian=${encodeURIComponent(token)}`;
+    const link = `${guardianAccessBaseUrl}?guardian=${encodeURIComponent(token)}&pid=${encodeURIComponent(player.id)}`;
 
     try {
       if (navigator?.clipboard?.writeText) {
@@ -3639,6 +3795,7 @@ export default function App() {
   const currentMetrics = metricsByPlayer[selectedPlayerId] || emptyMetrics();
   const currentFeedback = feedbackByPlayer[selectedPlayerId] || "";
   const role = currentUser?.role || "";
+  const isStudentProfile = isPlayerRole(role);
   const selectedTile = selectedTileByRole[role] || "";
   const coachContentMode =
     selectedTile === "Leaderboard"
@@ -3657,6 +3814,7 @@ export default function App() {
   };
   const roleLabel = roleLabelMap[role] || (role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "");
   const dashboardTitle = roleLabel ? `${roleLabel} Dashboard` : "Dashboard";
+  const forcePasswordResetRequired = Boolean(firebaseAuthClaims?.force_password_reset);
   const hasUnsavedAdminChanges =
     role === "admin" &&
     (agendaTemplatesDirty || appSettingsDirty || (isEventModalOpen && eventFormIsDirty));
@@ -3679,6 +3837,73 @@ export default function App() {
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!currentUser || !forcePasswordResetRequired) {
+      return;
+    }
+
+    setSelectedTileByRole((prev) => ({
+      ...prev,
+      [currentUser.role]: "My Profile",
+    }));
+  }, [currentUser, forcePasswordResetRequired]);
+
+  useEffect(() => {
+    if (!guardianToken || currentUser || !appSettings.guardianAccessEnabled) {
+      return;
+    }
+
+    let isMounted = true;
+    setGuardianPayloadLoading(true);
+    setGuardianPayloadError("");
+
+    const loadGuardianDashboard = async () => {
+      try {
+        const response = await getGuardianDashboardViaFunctions({
+          guardianToken,
+          playerId: guardianPlayerId,
+        });
+
+        if (!isMounted) {
+          return;
+        }
+
+        const player = response?.player || null;
+        if (!player?.id) {
+          setGuardianPayloadError("Guardian profile not found.");
+          setGuardianPayloadLoading(false);
+          return;
+        }
+
+        setPlayers([player]);
+        setSelectedPlayerId(player.id);
+        setAttendanceByPlayer({ [player.id]: Array.isArray(response.attendance) ? response.attendance : [] });
+        setMetricsByPlayer({ [player.id]: response.metrics || {} });
+        setFeedbackByPlayer({ [player.id]: response.feedback || "" });
+        setWeeklyGoalsByPlayer({ [player.id]: Array.isArray(player.weeklyGoals) ? player.weeklyGoals : [] });
+        setWeeklyGoalProgressByPlayer({
+          [player.id]: Array.isArray(player.weeklyGoalProgress) ? player.weeklyGoalProgress : [],
+        });
+        setEventEnrollments(
+          buildEventEnrollmentsFromPlayers([player])
+        );
+        setGuardianPayloadLoading(false);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+        setGuardianPayloadError(error?.message || "Failed to load guardian dashboard.");
+        setGuardianPayloadLoading(false);
+      }
+    };
+
+    loadGuardianDashboard();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [guardianToken, guardianPlayerId, currentUser, appSettings.guardianAccessEnabled]);
 
   const linkedPlayer = useMemo(() => {
     if (!currentUser) {
@@ -3714,10 +3939,25 @@ export default function App() {
     return null;
   }, [currentUser, players]);
 
-  const guardianLinkedPlayer = useMemo(
-    () => players.find((player) => player.guardianAccessToken === guardianToken) || null,
-    [players, guardianToken]
-  );
+  const guardianLinkedPlayer = useMemo(() => {
+    if (!guardianToken) {
+      return null;
+    }
+
+    if (guardianPlayerId) {
+      const byId = players.find((player) => player.id === guardianPlayerId);
+      if (byId && String(byId.guardianAccessToken || "").trim() === guardianToken) {
+        return byId;
+      }
+      return null;
+    }
+
+    const matches = players.filter((player) => player.guardianAccessToken === guardianToken);
+    if (matches.length > 1) {
+      console.warn("Multiple guardian tokens matched. Use pid to disambiguate.");
+    }
+    return matches[0] || null;
+  }, [players, guardianToken, guardianPlayerId]);
 
   const guardianLinkedEvents = useMemo(() => {
     if (!guardianLinkedPlayer) {
@@ -4379,7 +4619,7 @@ export default function App() {
         return {
           id: player.id,
           name: player.name,
-          role: player.role || "Not set",
+          role: formatCoachRoleLabel(player.role),
           attendancePercent: calcAttendancePercent(playerAttendance),
           overallScore: calcOverallScore({
             attendance: playerAttendance,
@@ -5178,6 +5418,11 @@ export default function App() {
       return;
     }
 
+    if (forcePasswordResetRequired && tile !== "My Profile") {
+      showToast("Password reset required. Update your password to continue.", "warning");
+      return;
+    }
+
     if (currentUser.role === "admin") {
       const canContinue = await requestDiscardUnsavedAdminChanges();
       if (!canContinue) {
@@ -5255,6 +5500,22 @@ export default function App() {
 
     const firebaseModule = await import("./lib/firebase.js");
     return (await firebaseModule.auth.currentUser?.getIdToken()) || "";
+  };
+
+  const refreshAuthClaims = async () => {
+    const firebaseModule = await import("./lib/firebase.js");
+    const { getIdTokenResult } = await import("firebase/auth");
+    const current = firebaseModule.auth.currentUser;
+
+    if (!current) {
+      return null;
+    }
+
+    await current.getIdToken(true);
+    const tokenResult = await getIdTokenResult(current);
+    setFirebaseAuthUid(current.uid || "");
+    setFirebaseAuthClaims(tokenResult?.claims || null);
+    return tokenResult?.claims || null;
   };
 
   const persistEventToBackendSafely = async (eventPayload) => {
@@ -5381,11 +5642,54 @@ export default function App() {
       return;
     }
 
-    setAdminUserStatusById((prev) => ({
-      ...prev,
-      [user.id]: prev[user.id] === "disabled" ? "active" : "disabled",
-    }));
-    showToast(`User status updated to ${nextStatus}.`, "success");
+    if (!isCloudAuthEnabled()) {
+      showToast("Cloud auth is required to update user status.", "error");
+      return;
+    }
+
+    if (adminUserStatusSavingById[user.id]) {
+      return;
+    }
+
+    setAdminUserStatusSavingById((prev) => ({ ...prev, [user.id]: true }));
+
+    try {
+      const idToken = await getCurrentIdToken();
+      if (!idToken) {
+        throw new Error("Admin session token is missing.");
+      }
+
+      await updateAccountStatusViaFunctions({
+        idToken,
+        accountId: user.id,
+        status: nextStatus,
+      });
+
+      setAdminUserStatusById((prev) => ({
+        ...prev,
+        [user.id]: nextStatus === "active" ? "active" : "disabled",
+      }));
+
+      setUsers((prev) =>
+        prev.map((item) =>
+          item.id === user.id
+            ? {
+                ...item,
+                account: {
+                  ...(item.account || {}),
+                  verification_status: nextStatus,
+                },
+              }
+            : item
+        )
+      );
+
+      showToast(`User status updated to ${nextStatus}.`, "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to update user status.", "error");
+    } finally {
+      setAdminUserStatusSavingById((prev) => ({ ...prev, [user.id]: false }));
+    }
   };
 
   const handlePromoteUserRole = async (user, nextRole) => {
@@ -6808,7 +7112,12 @@ export default function App() {
               return;
             }
             if (!allowLocalFallback && error?.status === 403) {
-              setAuthError("Account is pending email verification. Verify to activate.");
+              const reason = String(error?.details?.reason || "").trim();
+              if (reason === "account_inactive") {
+                setAuthError("Account is inactive. Contact admin.");
+              } else {
+                setAuthError("Account is pending email verification. Verify to activate.");
+              }
               return;
             }
             if (!allowLocalFallback && error?.status === 401) {
@@ -6855,6 +7164,11 @@ export default function App() {
         const found = exactIdMatch || matchingUsers[0];
 
         if (!isAccountActive(found.account)) {
+          const normalizedStatus = String(found.account?.verification_status || "").trim().toLowerCase();
+          if (normalizedStatus === ACCOUNT_STATUSES.INACTIVE) {
+            setAuthError("Account is inactive. Contact admin.");
+            return;
+          }
           if (shouldPurgeUnverifiedAccount(found.account, Date.now())) {
             setAuthError("Account verification window expired. Please sign up again.");
           } else {
@@ -7099,6 +7413,65 @@ export default function App() {
     setAdminPasswordNotice("Admin password updated successfully.");
   };
 
+  const handleProfilePasswordChange = async (event) => {
+    event.preventDefault();
+    setProfilePasswordError("");
+    setProfilePasswordNotice("");
+
+    if (!currentUser) {
+      setProfilePasswordError("Login is required to change password.");
+      return;
+    }
+
+    if (!isCloudAuthEnabled() || !isFirestorePersistenceEnabled()) {
+      setProfilePasswordError("Cloud password change is unavailable in this session.");
+      return;
+    }
+
+    if (profilePasswordSaving) {
+      return;
+    }
+
+    const newPassword = profilePasswordForm.newPassword;
+    const confirmPassword = profilePasswordForm.confirmPassword;
+
+    if (!newPassword || !confirmPassword) {
+      setProfilePasswordError("New password and confirmation are required.");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setProfilePasswordError("New password must be at least 6 characters.");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setProfilePasswordError("New password and confirmation must match.");
+      return;
+    }
+
+    setProfilePasswordSaving(true);
+    try {
+      const idToken = await getCurrentIdToken();
+      if (!idToken) {
+        throw new Error("Session token is missing. Please login again.");
+      }
+
+      await updateAccountPasswordViaFunctions({
+        idToken,
+        newPassword,
+      });
+
+      await refreshAuthClaims();
+      setProfilePasswordForm({ newPassword: "", confirmPassword: "" });
+      setProfilePasswordNotice("Password updated successfully.");
+    } catch (error) {
+      setProfilePasswordError(error?.message || "Failed to update password.");
+    } finally {
+      setProfilePasswordSaving(false);
+    }
+  };
+
   const handleAdminAccountLookup = async () => {
     if (!currentUser || currentUser.role !== "admin") {
       setAdminAccountLookupError("Admin access required.");
@@ -7161,6 +7534,306 @@ export default function App() {
     }
   };
 
+  const openAdminEnrollmentModal = (user) => {
+    const linkedPlayerProfile = players.find((player) => player.playerUserId === user.id) || null;
+    if (!linkedPlayerProfile) {
+      showToast("No player profile linked to this account.", "error");
+      return;
+    }
+
+    setAdminEnrollmentModal({
+      isOpen: true,
+      user,
+      player: linkedPlayerProfile,
+    });
+    setAdminEnrollmentEventIds(
+      Array.isArray(linkedPlayerProfile.eventIds) ? linkedPlayerProfile.eventIds : []
+    );
+    setAdminEnrollmentError("");
+  };
+
+  const closeAdminEnrollmentModal = () => {
+    setAdminEnrollmentModal({
+      isOpen: false,
+      user: null,
+      player: null,
+    });
+    setAdminEnrollmentEventIds([]);
+    setAdminEnrollmentError("");
+  };
+
+  const toggleAdminEnrollmentEvent = (eventId) => {
+    setAdminEnrollmentEventIds((prev) =>
+      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]
+    );
+  };
+
+  const handleSaveAdminEnrollment = async () => {
+    const targetPlayer = adminEnrollmentModal.player;
+    if (!targetPlayer) {
+      return;
+    }
+
+    if (adminEnrollmentSaving) {
+      return;
+    }
+
+    const normalizedEventIds = adminEnrollmentEventIds
+      .map((value) => String(value || "").trim())
+      .filter(Boolean);
+
+    const coachIdSet = new Set();
+    normalizedEventIds.forEach((eventId) => {
+      const eventItem = events.find((item) => item.id === eventId);
+      const assignedCoachIds = Array.isArray(eventItem?.assignedCoachIds) && eventItem.assignedCoachIds.length > 0
+        ? eventItem.assignedCoachIds
+        : eventItem?.assignedCoachId
+          ? [eventItem.assignedCoachId]
+          : [];
+      assignedCoachIds.forEach((coachId) => {
+        if (coachId) {
+          coachIdSet.add(coachId);
+        }
+      });
+    });
+
+    const resolvedCoachIds = coachIdSet.size > 0
+      ? Array.from(coachIdSet)
+      : Array.isArray(targetPlayer.assignedCoachIds)
+        ? targetPlayer.assignedCoachIds
+        : [];
+
+    setAdminEnrollmentSaving(true);
+    setAdminEnrollmentError("");
+
+    try {
+      setPlayers((prev) => {
+        const nextPlayers = prev.map((player) =>
+          player.id === targetPlayer.id
+            ? {
+                ...player,
+                eventIds: normalizedEventIds,
+                assignedCoachIds: resolvedCoachIds,
+              }
+            : player
+        );
+        setEventEnrollments(buildEventEnrollmentsFromPlayers(nextPlayers));
+        return nextPlayers;
+      });
+
+      if (isCloudAuthEnabled()) {
+        const idToken = await getCurrentIdToken();
+        if (!idToken) {
+          throw new Error("Admin session token is missing.");
+        }
+
+        await updatePlayerEnrollmentAdminViaFunctions({
+          idToken,
+          playerId: targetPlayer.id,
+          eventIds: normalizedEventIds,
+          assignedCoachIds: resolvedCoachIds,
+        });
+      }
+
+      showToast("Enrollment updated for student.", "success");
+      closeAdminEnrollmentModal();
+    } catch (error) {
+      setAdminEnrollmentError(error?.message || "Failed to update enrollment.");
+    } finally {
+      setAdminEnrollmentSaving(false);
+    }
+  };
+
+  const handleAdminResetUserPassword = async (user) => {
+    if (!currentUser || currentUser.role !== "admin") {
+      showToast("Admin access required.", "error");
+      return;
+    }
+
+    const confirmed = await requestConfirmation({
+      title: "Reset User Password",
+      message: `Reset password for ${user.name} (${user.id}) to the default Welcome@123?`,
+      confirmLabel: "Reset",
+      cancelLabel: "Cancel",
+      tone: "warning",
+    });
+
+    if (!confirmed) {
+      showToast("Password reset cancelled.", "warning");
+      return;
+    }
+
+    setAdminResettingUserId(user.id);
+    try {
+      const idToken = await getCurrentIdToken();
+      if (!idToken) {
+        throw new Error("Admin session token is missing.");
+      }
+
+      await resetAccountPasswordViaFunctions({
+        idToken,
+        accountId: user.id,
+      });
+
+      setUsers((prev) =>
+        prev.map((item) =>
+          item.id === user.id
+            ? {
+                ...item,
+                account: {
+                  ...(item.account || {}),
+                  force_password_reset: true,
+                },
+              }
+            : item
+        )
+      );
+
+      showToast("Password reset. User must change password at next login.", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to reset password.", "error");
+    } finally {
+      setAdminResettingUserId("");
+    }
+  };
+
+  const openCoachRoleModal = (player) => {
+    setCoachRoleModal({ isOpen: true, player });
+    setCoachRoleSelection(String(player?.role || "").trim());
+    setCoachRoleError("");
+  };
+
+  const closeCoachRoleModal = () => {
+    setCoachRoleModal({ isOpen: false, player: null });
+    setCoachRoleSelection("");
+    setCoachRoleError("");
+  };
+
+  const handleSaveCoachRole = async () => {
+    const targetPlayer = coachRoleModal.player;
+    if (!targetPlayer) {
+      return;
+    }
+
+    const nextRole = String(coachRoleSelection || "").trim();
+    if (!nextRole) {
+      setCoachRoleError("Select a role before saving.");
+      return;
+    }
+
+    if (coachRoleSaving) {
+      return;
+    }
+
+    setCoachRoleSaving(true);
+    setCoachRoleError("");
+
+    try {
+      if (!isCloudAuthEnabled()) {
+        throw new Error("Cloud auth is required to update roles.");
+      }
+
+      const idToken = await getCurrentIdToken();
+      if (!idToken) {
+        throw new Error("Coach session token is missing.");
+      }
+
+      await updatePlayerRoleViaFunctions({
+        idToken,
+        playerId: targetPlayer.id,
+        role: nextRole,
+      });
+
+      setPlayers((prev) =>
+        prev.map((player) =>
+          player.id === targetPlayer.id
+            ? {
+                ...player,
+                role: nextRole,
+              }
+            : player
+        )
+      );
+
+      showToast("Player role updated.", "success");
+      closeCoachRoleModal();
+    } catch (error) {
+      setCoachRoleError(error?.message || "Failed to update role.");
+    } finally {
+      setCoachRoleSaving(false);
+    }
+  };
+
+  const openCoachAgeModal = (player) => {
+    setCoachAgeModal({ isOpen: true, player });
+    setCoachAgeSelection(String(player?.age || "").trim());
+    setCoachAgeError("");
+  };
+
+  const closeCoachAgeModal = () => {
+    setCoachAgeModal({ isOpen: false, player: null });
+    setCoachAgeSelection("");
+    setCoachAgeError("");
+  };
+
+  const handleSaveCoachAge = async () => {
+    const targetPlayer = coachAgeModal.player;
+    if (!targetPlayer) {
+      return;
+    }
+
+    const nextAge = String(coachAgeSelection ?? "").trim();
+    if (nextAge) {
+      const parsedAge = Number(nextAge);
+      if (!Number.isInteger(parsedAge) || parsedAge <= 0 || parsedAge >= 100) {
+        setCoachAgeError("Enter a valid age.");
+        return;
+      }
+    }
+
+    if (coachAgeSaving) {
+      return;
+    }
+
+    setCoachAgeSaving(true);
+    setCoachAgeError("");
+
+    try {
+      if (!isCloudAuthEnabled()) {
+        throw new Error("Cloud auth is required to update age.");
+      }
+
+      const idToken = await getCurrentIdToken();
+      if (!idToken) {
+        throw new Error("Coach session token is missing.");
+      }
+
+      await updatePlayerAgeViaFunctions({
+        idToken,
+        playerId: targetPlayer.id,
+        age: nextAge,
+      });
+
+      setPlayers((prev) =>
+        prev.map((player) =>
+          player.id === targetPlayer.id
+            ? {
+                ...player,
+                age: nextAge,
+              }
+            : player
+        )
+      );
+
+      showToast("Player age updated.", "success");
+      closeCoachAgeModal();
+    } catch (error) {
+      setCoachAgeError(error?.message || "Failed to update age.");
+    } finally {
+      setCoachAgeSaving(false);
+    }
+  };
+
   const handleAdminAccountMigration = async () => {
     if (!currentUser || currentUser.role !== "admin") {
       setAdminMigrationError("Admin access required.");
@@ -7193,18 +7866,10 @@ export default function App() {
     setAdminAuthRefreshLoading(true);
 
     try {
-      const firebaseModule = await import("./lib/firebase.js");
-      const { getIdTokenResult } = await import("firebase/auth");
-      const current = firebaseModule.auth.currentUser;
-
-      if (!current) {
+      const claims = await refreshAuthClaims();
+      if (!claims) {
         throw new Error("No Firebase session.");
       }
-
-      await current.getIdToken(true);
-      const tokenResult = await getIdTokenResult(current);
-      setFirebaseAuthUid(current.uid || "");
-      setFirebaseAuthClaims(tokenResult?.claims || null);
     } catch (error) {
       setAdminAuthRefreshError(error?.message || "Failed to refresh auth claims.");
     } finally {
@@ -7292,6 +7957,34 @@ export default function App() {
     </section>
   );
 
+  if (!currentUser && guardianToken && guardianPayloadLoading) {
+    return (
+      <div className="min-h-screen px-3 py-6 text-slate-100 sm:px-6 sm:py-10">
+        <main className="mx-auto flex min-h-[70vh] w-full max-w-screen-md items-center justify-center">
+          <section className="glass w-full rounded-3xl p-8 text-center">
+            <p className="text-xs uppercase tracking-[0.25em] text-sky-200">Guardian Access</p>
+            <h1 className="mt-3 text-2xl font-bold text-white sm:text-3xl">Loading dashboard...</h1>
+            <p className="mt-3 text-sm text-slate-300">Fetching the linked player profile.</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (!currentUser && guardianToken && guardianPayloadError) {
+    return (
+      <div className="min-h-screen px-3 py-6 text-slate-100 sm:px-6 sm:py-10">
+        <main className="mx-auto flex min-h-[70vh] w-full max-w-screen-md items-center justify-center">
+          <section className="glass w-full rounded-3xl p-8 text-center">
+            <p className="text-xs uppercase tracking-[0.25em] text-rose-200">Guardian Access</p>
+            <h1 className="mt-3 text-2xl font-bold text-white sm:text-3xl">Link not available</h1>
+            <p className="mt-3 text-sm text-slate-300">{guardianPayloadError}</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
   if (!currentUser && appSettings.guardianAccessEnabled && guardianToken && guardianLinkedPlayer) {
     return (
       <GuardianView
@@ -7368,7 +8061,7 @@ export default function App() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="rounded-full border border-slate-700 bg-slate-900/60 px-4 py-2 text-xs text-slate-300">
-            {currentUser.email}
+            {maskEmail(currentUser.email) || "Hidden"}
           </span>
           <button
             type="button"
@@ -7504,10 +8197,34 @@ export default function App() {
                               {paginatedCoachRosterPlayers.map((player) => (
                                 <tr key={player.id}>
                                   <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2 font-medium text-slate-100">{player.name}</td>
-                                  <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">{player.role || "Not set"}</td>
+                                  <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">{formatCoachRoleLabel(player.role)}</td>
                                   <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">{player.age || "-"}</td>
                                   <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">
                                     <div className="flex items-center gap-2">
+                                      {formatCoachRoleLabel(player.role) === "Not set" && (
+                                        <button
+                                          type="button"
+                                          title="Set player role"
+                                          aria-label="Set player role"
+                                          onClick={() => openCoachRoleModal(player)}
+                                          className="rounded-full border border-emerald-300/50 bg-slate-900/60 p-2 text-emerald-100 transition hover:border-emerald-200 hover:text-emerald-50"
+                                        >
+                                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                            <path d="M12 5v14" />
+                                            <path d="M5 12h14" />
+                                            <circle cx="12" cy="12" r="9" />
+                                          </svg>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        title="Update age"
+                                        aria-label="Update age"
+                                        onClick={() => openCoachAgeModal(player)}
+                                        className="rounded-full border border-amber-300/50 bg-slate-900/60 px-2.5 py-1.5 text-xs font-semibold text-amber-100 transition hover:border-amber-200 hover:text-amber-50"
+                                      >
+                                        Age
+                                      </button>
                                       <button
                                         type="button"
                                         title="Open assessment modal"
@@ -8244,49 +8961,111 @@ export default function App() {
           </section>
         )}
 
-        {isPlayerRole(role) && (
-          <>
-            {selectedTile === "My Profile" && (
-              <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-                <article className="glass rounded-3xl p-6">
-                  <h2 className="text-lg font-semibold text-white">My Profile</h2>
-                  {!linkedPlayer ? (
-                    <p className="mt-3 text-sm text-slate-300">No linked player profile yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-2 text-sm text-slate-200">
-                      <p>Name: {linkedPlayer.name}</p>
-                      <p>Age: {linkedPlayer.age || "Not set"}</p>
-                      <p>Role: {linkedPlayer.role || "Not set"}</p>
-                      <p>Guardian: {linkedPlayer.guardianEmail || "Not set"}</p>
-                    </div>
-                  )}
-                </article>
+        {selectedTile === "My Profile" && (
+          <section className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <article className="glass rounded-3xl p-6">
+              <h2 className="text-lg font-semibold text-white">My Profile</h2>
+              {!currentUser ? (
+                <p className="mt-3 text-sm text-slate-300">No active session found.</p>
+              ) : isStudentProfile ? (
+                !linkedPlayer ? (
+                  <p className="mt-3 text-sm text-slate-300">No linked player profile yet.</p>
+                ) : (
+                  <div className="mt-3 space-y-2 text-sm text-slate-200">
+                    <p>Name: {linkedPlayer.name}</p>
+                    <p>Age: {linkedPlayer.age || "Not set"}</p>
+                    <p>Role: {linkedPlayer.role || "Not set"}</p>
+                    <p>Guardian: {maskEmail(linkedPlayer.guardianEmail) || "Hidden"}</p>
+                  </div>
+                )
+              ) : (
+                <div className="mt-3 space-y-2 text-sm text-slate-200">
+                  <p>Name: {currentUser.name}</p>
+                  <p>Role: {roleLabel}</p>
+                  <p>Account ID: {currentUser.id}</p>
+                  <p>Email: {maskEmail(currentUser.email || currentUser.account?.email) || "Hidden"}</p>
+                </div>
+              )}
+            </article>
 
-                <article className="glass rounded-3xl p-6">
-                  <h2 className="text-lg font-semibold text-white">Attendance Snapshot</h2>
-                  <p className="mt-3 text-3xl font-bold text-sky-200">{linkedAttendancePercent}%</p>
-                  <p className="mt-2 text-sm text-slate-300">
-                    {linkedAttendance.filter(Boolean).length} out of {DAYS.length} days captured.
-                  </p>
-                </article>
-
-                <article className="glass rounded-3xl p-6">
-                  <h2 className="text-lg font-semibold text-white">Enrolled Events</h2>
-                  {linkedPlayerEvents.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-300">No event enrollment found yet.</p>
-                  ) : (
-                    <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                      {linkedPlayerEvents.slice(0, 3).map((eventItem) => (
-                        <li key={eventItem.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                          {eventItem.name} - {formatEventDateRange(eventItem)}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </article>
-              </section>
+            {isStudentProfile && (
+              <article className="glass rounded-3xl p-6">
+                <h2 className="text-lg font-semibold text-white">Attendance Snapshot</h2>
+                <p className="mt-3 text-3xl font-bold text-sky-200">{linkedAttendancePercent}%</p>
+                <p className="mt-2 text-sm text-slate-300">
+                  {linkedAttendance.filter(Boolean).length} out of {DAYS.length} days captured.
+                </p>
+              </article>
             )}
 
+            {isStudentProfile && (
+              <article className="glass rounded-3xl p-6">
+                <h2 className="text-lg font-semibold text-white">Enrolled Events</h2>
+                {linkedPlayerEvents.length === 0 ? (
+                  <p className="mt-3 text-sm text-slate-300">No event enrollment found yet.</p>
+                ) : (
+                  <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                    {linkedPlayerEvents.slice(0, 3).map((eventItem) => (
+                      <li key={eventItem.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                        {eventItem.name} - {formatEventDateRange(eventItem)}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </article>
+            )}
+
+            <article className={`glass rounded-3xl p-6 ${isStudentProfile ? "lg:col-span-3" : "lg:col-span-2"}`}>
+              <h2 className="text-lg font-semibold text-white">Password & Security</h2>
+              <p className="mt-2 text-sm text-slate-300">
+                Update your password for cloud login. You will be asked to use the new password next time you login.
+              </p>
+              {forcePasswordResetRequired && (
+                <p className="mt-2 rounded-xl border border-amber-300/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                  Password reset required. Update your password to continue using the dashboard.
+                </p>
+              )}
+              <form className="mt-4 grid grid-cols-1 gap-2 md:grid-cols-3" onSubmit={handleProfilePasswordChange}>
+                <input
+                  className="rounded-full border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm"
+                  type="password"
+                  placeholder="New password"
+                  value={profilePasswordForm.newPassword}
+                  onChange={(event) =>
+                    setProfilePasswordForm((prev) => ({
+                      ...prev,
+                      newPassword: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-full border border-slate-700 bg-slate-900/60 px-4 py-2 text-sm"
+                  type="password"
+                  placeholder="Confirm new password"
+                  value={profilePasswordForm.confirmPassword}
+                  onChange={(event) =>
+                    setProfilePasswordForm((prev) => ({
+                      ...prev,
+                      confirmPassword: event.target.value,
+                    }))
+                  }
+                />
+                <button
+                  type="submit"
+                  disabled={profilePasswordSaving}
+                  className="rounded-full border border-sky-300/60 px-4 py-2 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {profilePasswordSaving ? "Updating..." : "Update Password"}
+                </button>
+              </form>
+              {profilePasswordError && <p className="mt-2 text-xs text-rose-300">{profilePasswordError}</p>}
+              {profilePasswordNotice && <p className="mt-2 text-xs text-emerald-300">{profilePasswordNotice}</p>}
+            </article>
+          </section>
+        )}
+
+        {isStudentProfile && (
+          <>
             {selectedTile === "All Events" && (
               <section className="grid grid-cols-1 gap-4">
                 <article className="glass rounded-3xl p-6">
@@ -9145,7 +9924,7 @@ export default function App() {
               {adminAccountLookupResult?.status === "found" && (
                 <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-200">
                   <p>Account ID: {adminAccountLookupResult.account.account_id}</p>
-                  <p>Email: {adminAccountLookupResult.account.email}</p>
+                  <p>Email: {maskEmail(adminAccountLookupResult.account.email) || "Hidden"}</p>
                   <p>Role: {adminAccountLookupResult.account.role}</p>
                   <p>Verified: {adminAccountLookupResult.account.email_verified ? "Yes" : "No"}</p>
                   <p>Status: {adminAccountLookupResult.account.verification_status}</p>
@@ -9164,7 +9943,7 @@ export default function App() {
                           ? adminAccountLookupResult.player.assignedCoachIds.join(", ")
                           : "None"}
                       </p>
-                      <p>Guardian Email: {adminAccountLookupResult.player.guardianEmail || "-"}</p>
+                      <p>Guardian Email: {maskEmail(adminAccountLookupResult.player.guardianEmail) || "Hidden"}</p>
                     </>
                   ) : (
                     <p className="mt-2 text-amber-200">No player profile linked to this account.</p>
@@ -9227,7 +10006,7 @@ export default function App() {
                 <p>firebaseAuthUid: {firebaseAuthUid || ""}</p>
                 <p>claims.role: {firebaseAuthClaims?.role || ""}</p>
                 <p>claims.verification_status: {firebaseAuthClaims?.verification_status || ""}</p>
-                <p>claims.account_email: {firebaseAuthClaims?.account_email || ""}</p>
+                <p>claims.account_email: {maskEmail(firebaseAuthClaims?.account_email) || "Hidden"}</p>
                 <p>persistence: {canUseFirestorePersistence ? "enabled" : "disabled"}</p>
               </div>
             </section>
@@ -9257,7 +10036,7 @@ export default function App() {
                   <tr className="text-slate-400">
                     <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">User ID</th>
                     <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Name</th>
-                    <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Email</th>
+                    <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Email (masked)</th>
                     <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Type</th>
                     <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Status</th>
                     <th className="border border-slate-800/60 bg-slate-900/35 px-3 py-2">Actions</th>
@@ -9268,7 +10047,9 @@ export default function App() {
                     <tr key={user.id}>
                       <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2 text-xs text-slate-400">{user.id}</td>
                       <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">{user.name}</td>
-                      <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">{user.email}</td>
+                      <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">
+                        {maskEmail(user.email) || "Hidden"}
+                      </td>
                       <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2 capitalize">{user.role === "player" ? "student" : user.role}</td>
                       <td className="border border-slate-800/60 bg-slate-950/25 px-3 py-2">
                         <span
@@ -9285,14 +10066,45 @@ export default function App() {
                         <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            className="rounded-full border border-slate-500/70 bg-slate-900/60 p-2 text-slate-200 transition hover:border-slate-300 hover:text-white"
+                            className="rounded-full border border-slate-500/70 bg-slate-900/60 p-2 text-slate-200 transition hover:border-slate-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
                             title={adminUserStatusById[user.id] === "disabled" ? "Activate user" : "Inactivate user"}
                             aria-label={adminUserStatusById[user.id] === "disabled" ? "Activate user" : "Inactivate user"}
                             onClick={() => handleToggleAdminUserStatus(user)}
+                            disabled={adminUserStatusSavingById[user.id]}
                           >
                             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                               <circle cx="12" cy="12" r="9" />
                               <path d="M12 3v9" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-emerald-300/50 bg-slate-900/60 p-2 text-emerald-100 transition hover:border-emerald-200 hover:text-emerald-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            title="Assign events"
+                            aria-label="Assign events"
+                            onClick={() => openAdminEnrollmentModal(user)}
+                            disabled={user.role !== "player"}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M9 5h6" />
+                              <path d="M9 9h6" />
+                              <path d="M9 13h6" />
+                              <path d="M7 3h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-full border border-rose-300/50 bg-slate-900/60 p-2 text-rose-100 transition hover:border-rose-200 hover:text-rose-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            title="Reset password"
+                            aria-label="Reset password"
+                            onClick={() => handleAdminResetUserPassword(user)}
+                            disabled={!isCloudAuthEnabled() || adminResettingUserId === user.id}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M12 4a4 4 0 0 1 4 4v3" />
+                              <rect x="6" y="11" width="12" height="9" rx="2" />
+                              <path d="M12 15v2" />
+                              <path d="M8 11V8a4 4 0 0 1 8 0" />
                             </svg>
                           </button>
                           <button
@@ -10208,6 +11020,213 @@ export default function App() {
                   </p>
                 </article>
               ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {adminEnrollmentModal.isOpen && (
+        <section className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-3xl rounded-3xl border border-slate-700 bg-slate-900 p-5 text-slate-100 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Assign Events</p>
+                <h3 className="mt-2 text-lg font-semibold text-white">
+                  {adminEnrollmentModal.user?.name || "Student"}
+                </h3>
+                <p className="mt-1 text-xs text-slate-400">Account ID: {adminEnrollmentModal.user?.id || ""}</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 px-3 py-1 text-sm"
+                onClick={closeAdminEnrollmentModal}
+                aria-label="Close enrollment"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3">
+              {events.length === 0 ? (
+                <p className="text-sm text-slate-300">No events available.</p>
+              ) : (
+                events.map((eventItem) => {
+                  const isSelected = adminEnrollmentEventIds.includes(eventItem.id);
+                  return (
+                    <label
+                      key={`admin-enroll-${eventItem.id}`}
+                      className={`flex items-start gap-3 rounded-2xl border px-3 py-2 text-sm ${
+                        isSelected
+                          ? "border-sky-300/60 bg-sky-500/10"
+                          : "border-slate-800 bg-slate-950/40"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={isSelected}
+                        onChange={() => toggleAdminEnrollmentEvent(eventItem.id)}
+                      />
+                      <span>
+                        <span className="block text-xs uppercase tracking-[0.2em] text-slate-400">{eventItem.id}</span>
+                        <span className="block font-semibold text-slate-100">{eventItem.name}</span>
+                        <span className="block text-xs text-slate-400">{formatEventDateRange(eventItem)}</span>
+                      </span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            {adminEnrollmentError && (
+              <p className="mt-3 text-xs text-rose-300">{adminEnrollmentError}</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm text-slate-200"
+                onClick={closeAdminEnrollmentModal}
+                disabled={adminEnrollmentSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-sky-300/70 bg-sky-500/20 px-4 py-2 text-sm font-semibold text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleSaveAdminEnrollment}
+                disabled={adminEnrollmentSaving}
+              >
+                {adminEnrollmentSaving ? "Saving..." : "Save Enrollment"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {coachRoleModal.isOpen && (
+        <section className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-5 text-slate-100 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Set Player Role</p>
+                <h3 className="mt-2 text-lg font-semibold text-white">
+                  {coachRoleModal.player?.name || "Player"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 px-3 py-1 text-sm"
+                onClick={closeCoachRoleModal}
+                aria-label="Close role editor"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="coach-role-select" className="text-xs text-slate-400">
+                Player capability role
+              </label>
+              <select
+                id="coach-role-select"
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                value={coachRoleSelection}
+                onChange={(event) => setCoachRoleSelection(event.target.value)}
+              >
+                <option value="">Select role</option>
+                {Object.keys(ROLE_METRIC_KEYS).map((roleOption) => (
+                  <option key={roleOption} value={roleOption}>{roleOption}</option>
+                ))}
+              </select>
+            </div>
+
+            {coachRoleError && (
+              <p className="mt-3 text-xs text-rose-300">{coachRoleError}</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm text-slate-200"
+                onClick={closeCoachRoleModal}
+                disabled={coachRoleSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-emerald-300/70 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleSaveCoachRole}
+                disabled={coachRoleSaving}
+              >
+                {coachRoleSaving ? "Saving..." : "Save Role"}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {coachAgeModal.isOpen && (
+        <section className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-5 text-slate-100 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Update Player Age</p>
+                <h3 className="mt-2 text-lg font-semibold text-white">
+                  {coachAgeModal.player?.name || "Player"}
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 px-3 py-1 text-sm"
+                onClick={closeCoachAgeModal}
+                aria-label="Close age editor"
+              >
+                X
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <label htmlFor="coach-age-select" className="text-xs text-slate-400">
+                Player age
+              </label>
+              <select
+                id="coach-age-select"
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+                value={coachAgeSelection}
+                onChange={(event) => setCoachAgeSelection(event.target.value)}
+              >
+                <option value="">Not set</option>
+                {Array.from({ length: 29 }, (_, index) => index + 7).map((age) => (
+                  <option key={`coach-age-${age}`} value={String(age)}>
+                    {age}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {coachAgeError && (
+              <p className="mt-3 text-xs text-rose-300">{coachAgeError}</p>
+            )}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-slate-600 bg-slate-900/70 px-4 py-2 text-sm text-slate-200"
+                onClick={closeCoachAgeModal}
+                disabled={coachAgeSaving}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="rounded-full border border-amber-300/70 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={handleSaveCoachAge}
+                disabled={coachAgeSaving}
+              >
+                {coachAgeSaving ? "Saving..." : "Save Age"}
+              </button>
             </div>
           </div>
         </section>

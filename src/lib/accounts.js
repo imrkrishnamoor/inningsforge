@@ -3,6 +3,7 @@ const DAY_IN_MS = 24 * 60 * 60 * 1000;
 export const ACCOUNT_STATUSES = {
   PENDING_VERIFICATION: "pending_verification",
   ACTIVE: "active",
+  INACTIVE: "inactive",
   PURGED: "purged",
 };
 
